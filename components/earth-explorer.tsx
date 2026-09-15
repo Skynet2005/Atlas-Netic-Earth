@@ -35,15 +35,18 @@ export default function EarthExplorer() {
   const trafficFeeds=useTraffic(trafficLayers,ready,view.latitude,view.longitude);
   const trafficTargets=useMemo(()=>[...trafficFeeds.air.targets,...trafficFeeds.maritime.targets].filter(target=>trafficLayers[target.kind]),[trafficFeeds.air.targets,trafficFeeds.maritime.targets,trafficLayers]);
   const notice=useCallback((key:string,message:string|null)=>setNotices(previous=>{const next={...previous};if(message) next[key]=message;else delete next[key];return next;}),[]);
+  const reloadGlobe=()=>{
+    setReady(false);setFatal('');setTerrainReady(false);setLoading(true);setNotices({});setNavigating(false);
+    setAngleDraft(null);setSelectedTraffic(null);setPoint(null);setRetry(value=>value+1);
+  };
   useEffect(()=>{
     let cancelled=false,engine:Globe|undefined;
-    setReady(false);setFatal('');setTerrainReady(false);setLoading(true);setNotices({});setNavigating(false);
     void (async()=>{
       try {
         const C=await loadCesium();
         if(cancelled||!canvasRef.current||!creditRef.current)return;
         engine=new Globe(C,canvasRef.current,creditRef.current,{
-          onView:setView,onPoint:setPoint,onTerrain:setTerrainReady,onNavigating:setNavigating,onLoading:setLoading,onNotice:notice,onTraffic:setSelectedTraffic,
+          onView:setView,onPoint:setPoint,onTerrain:setTerrainReady,onNavigating:active=>{setNavigating(active);if(!active)setAngleDraft(null);},onLoading:setLoading,onNotice:notice,onTraffic:setSelectedTraffic,
         });
         globeRef.current=engine;setReady(true);
         await engine.initialize();
@@ -58,7 +61,6 @@ export default function EarthExplorer() {
   useEffect(()=>{if(ready) globeRef.current?.setExaggeration(exaggeration);},[ready,exaggeration]);
   useEffect(()=>{if(ready) globeRef.current?.setShading(shading);},[ready,shading]);
   useEffect(()=>{if(ready) globeRef.current?.setTraffic(trafficTargets);},[ready,trafficTargets]);
-  useEffect(()=>{if(!navigating)setAngleDraft(null);},[navigating]);
   const home=useCallback(()=>{globeRef.current?.home();setLocation('Planet Earth');},[]);
   const goTo=useCallback((lng:number,lat:number,range=14000,heading=0)=>{
     setTerrain(true);globeRef.current?.clearPoint();
@@ -128,7 +130,7 @@ export default function EarthExplorer() {
       <div className="brand"><span className="brand-mark"><Globe2 size={26} strokeWidth={1.4}/></span><div><h1>Atlas<span className="brand-period">-Netic</span></h1><p>EARTH EXPLORER</p></div></div>
       <div className="header-actions">
         <span className="scale-pill"><Mountain size={15}/><span>{terrain?`${exaggeration.toFixed(1)}× terrain`:'Terrain off'}</span></span>
-        <Dialog><DialogTrigger asChild><button className="quiet-button info-button"><Info size={18}/><span>Data & controls</span></button></DialogTrigger>
+        <Dialog><DialogTrigger asChild><button className="quiet-button info-button" aria-label="Data & controls"><Info size={18}/><span>Data & controls</span></button></DialogTrigger>
           <DialogContent className="information-dialog"><DialogHeader><DialogTitle>Earth, at its real scale.</DialogTitle><DialogDescription>Elevation sources, precision, and ways to move.</DialogDescription></DialogHeader>
             <div className="information-scroll">
               <h3>Move around</h3><div className="instruction-grid"><span>Orbit / pan</span><strong>Drag with one finger or left mouse</strong><span>Zoom</span><strong>Pinch, scroll, or + / −</strong><span>Tilt / rotate</span><strong>Two fingers, right-drag, or Ctrl + drag</strong><span>Inspect elevation</span><strong>Click or tap the surface</strong><span>Return to Earth / north</span><strong>H / N, or the on-screen controls</strong></div>
@@ -172,8 +174,8 @@ export default function EarthExplorer() {
       <div className="tool-group glass"><ToolButton label="Overhead view" active={isOverhead} disabled={!ready} onClick={()=>applyAngle(90)}><ArrowDownToLine size={20}/></ToolButton><ToolButton label="Terrain 3D · close side view" active={!isOverhead} disabled={!ready||navigating} onClick={()=>applyAngle(TERRAIN_VIEW_ANGLE,true)}><Mountain size={20}/></ToolButton></div>
       <div className="tool-group glass"><ToolButton label="Return to globe · H" disabled={!ready} onClick={home}><Globe2 size={20}/></ToolButton></div>
     </nav>
-    {(!ready||fatal)&&<div className="globe-loading" role="status"><div className="loading-emblem"><Globe2 size={36}/></div><h2>{fatal?'The globe couldn’t start':'Opening Earth'}</h2><p>{fatal||'Loading your view of the planet…'}</p>{fatal&&<button className="primary-button" onClick={()=>setRetry(v=>v+1)}><RotateCcw size={16}/>Try again</button>}</div>}
-    {Object.keys(notices).length>0&&<div className="notice glass" role="status"><Info size={17}/><div>{Object.entries(notices).map(([key,message])=><p key={key}>{message}</p>)}<button onClick={()=>setRetry(v=>v+1)}>Reload data</button></div></div>}
+    {(!ready||fatal)&&<div className="globe-loading" role="status"><div className="loading-emblem"><Globe2 size={36}/></div><h2>{fatal?'The globe couldn’t start':'Opening Earth'}</h2><p>{fatal||'Loading your view of the planet…'}</p>{fatal&&<button className="primary-button" onClick={reloadGlobe}><RotateCcw size={16}/>Try again</button>}</div>}
+    {Object.keys(notices).length>0&&<div className="notice glass" role="status"><Info size={17}/><div>{Object.entries(notices).map(([key,message])=><p key={key}>{message}</p>)}<button onClick={reloadGlobe}>Reload data</button></div></div>}
     {point&&<section className="elevation-card glass" aria-label="Selected terrain elevation"><div className="elevation-title"><span><Crosshair size={15}/>SURFACE ELEVATION</span><button aria-label="Close elevation" onClick={()=>globeRef.current?.clearPoint()}><X size={17}/></button></div><p className="elevation-value" aria-live="polite">{point.pending?'Sampling…':point.height===null?'Unavailable':<><span className="approximately">≈</span>{Math.round(point.height).toLocaleString()}<span className="elevation-unit">m</span></>}</p><p className="elevation-coordinates">{coordinate(point.latitude,'N','S')}<span> / </span>{coordinate(point.longitude,'E','W')}</p><button className="point-terrain-button" disabled={!ready||navigating} onClick={()=>applyAngle(TERRAIN_VIEW_ANGLE,true)}><Mountain size={16}/>View this point in 3D</button><p className="elevation-note">{point.height===null&&!point.pending?'No elevation sample is available here.':'Source elevation · unaffected by height scale'}</p></section>}
     {selectedTraffic&&<section className="elevation-card traffic-card glass" aria-label="Selected transponder report"><div className="elevation-title"><span>{selectedTraffic.kind==='maritime'?'AIS VESSEL':selectedTraffic.kind==='military'?'MILITARY AIRCRAFT':'AIRCRAFT'}</span><button aria-label="Close traffic details" onClick={()=>globeRef.current?.clearTrafficSelection()}><X size={17}/></button></div><h2>{selectedTraffic.name}</h2><dl><dt>Position</dt><dd>{coordinate(selectedTraffic.latitude,'N','S')}<br/>{coordinate(selectedTraffic.longitude,'E','W')}</dd><dt>Speed</dt><dd>{selectedTraffic.speed===null?'Not reported':`${Math.round(selectedTraffic.speed)} kn`}</dd>{selectedTraffic.kind!=='maritime'&&<><dt>Altitude</dt><dd>{selectedTraffic.altitude===null?'Not reported':`${Math.round(selectedTraffic.altitude).toLocaleString()} m`}<small>{selectedTraffic.altitudeReference}</small></dd></>}<dt>Reported</dt><dd>{new Date(selectedTraffic.observedAt).toLocaleTimeString()}<small>{selectedTraffic.source}</small></dd></dl></section>}
     <div className="bottom-guide"><span className="location-name">{location}</span>{navigating&&<span className="navigation-progress" role="status">Loading terrain and adjusting your view…</span>}<p><span className="desktop-gesture">Drag to orbit<span>·</span>Scroll to zoom<span>·</span>Right-drag to tilt</span><span className="touch-gesture">Drag to orbit · Pinch to zoom · Two fingers to tilt</span></p></div>

@@ -22,7 +22,7 @@ export function TrafficPanel({ layers, onChange, feeds, onBaltic }: {
         <label className="layer-row" htmlFor={`traffic-${kind}`}><span><Icon size={17}/>{title}</span>
           <Switch id={`traffic-${kind}`} checked={layers[kind]} onCheckedChange={value => onChange({ ...layers, [kind]: value })}/></label>
         {layers[kind] && <p className="traffic-feed-status" role="status">
-          {feed.phase === 'loading' ? 'Connecting to feed…' : feed.phase === 'error' ? feed.message : `${count} reported · ${feed.updatedAt ? new Date(feed.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Waiting'}`}
+          {feed.phase === 'off' ? 'Waiting for the globe…' : feed.phase === 'loading' ? 'Connecting to feed…' : feed.phase === 'error' ? feed.message : `${count} reported · ${feed.updatedAt ? new Date(feed.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Waiting'}`}
         </p>}
       </div>;
     })}
