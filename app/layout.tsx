@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Atlas Earth — Explore in 3D",
-  description: "Explore a navigable 3D Earth with satellite imagery, elevation terrain, country borders, and overhead and tilted views.",
+  title: "Atlas-Netic — Explore Earth in 3D",
+  applicationName: "Atlas-Netic",
+  description: "Explore Earth with measured 3D terrain, satellite imagery, country borders, and public aircraft and AIS transponder reports.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

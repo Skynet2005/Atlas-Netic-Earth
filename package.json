@@ -1,5 +1,5 @@
 {
-  "name": "atlas-netic-earth",
+  "name": "atlas-netic",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -10,7 +10,7 @@
     "build": "node scripts/prepare-globe.mjs && next build --webpack",
     "start": "next start",
     "lint": "eslint . --ignore-pattern .next",
-    "test": "node --experimental-strip-types --test tests/terrain-view.test.mjs"
+    "test": "node --experimental-strip-types --test tests/*.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

@@ -231,3 +231,27 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 .point-terrain-button { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; border:1px solid #a4ecdb50; background:#a4ecdb15; color:#c1f4e3; border-radius:8px; font-size:14px; padding:10px; margin-top:16px; }
 .point-terrain-button:hover { background:#a4ecdb28; }
 @media (max-width:760px) { .navigation-progress { font-size:12px; max-width:240px; } }
+
+.brand h1 { white-space:nowrap; font-size:29px; letter-spacing:-1px; }
+.traffic-intro,.traffic-feed-status,.traffic-note,.traffic-source { font-size:12px; line-height:1.55; color:#9db1c0; }
+.traffic-intro { margin:9px 0; }
+.traffic-feed-status { margin:0 0 10px 27px; color:#b8ded5; overflow-wrap:anywhere; }
+.traffic-note { margin:9px 0; }
+.traffic-note p { margin:7px 0; }
+.traffic-source { margin:12px 0 0; font-size:11px; }
+.traffic-source a,.traffic-link { color:#a4ecdb; text-decoration:underline; text-underline-offset:3px; }
+.traffic-link { border:0; background:none; text-align:left; padding:4px 0; }
+.traffic-air .layer-row svg { color:#a4ecdb; }
+.traffic-military .layer-row svg { color:#ffbd75; }
+.traffic-maritime .layer-row svg { color:#8ecbff; }
+.traffic-card h2 { margin:15px 0; font-size:22px; font-weight:500; overflow-wrap:anywhere; }
+.traffic-card dl { display:grid; grid-template-columns:70px 1fr; gap:11px; font-size:13px; margin:0; }
+.traffic-card dt { color:#96afbf; }.traffic-card dd { margin:0; font-variant-numeric:tabular-nums; }
+.traffic-card small { display:block; color:#94abba; margin-top:3px; }
+@media (max-width:760px) {
+  .brand h1 { font-size:24px; }.brand p { font-size:10px; letter-spacing:1.6px; }
+  .brand-mark { width:32px;height:32px; }.brand-mark svg { width:23px; }
+  .header-actions .scale-pill { display:none; }
+  .traffic-panel .layer-row { min-height:44px; }
+  .traffic-card { max-height:calc(100dvh - 315px); overflow-y:auto; }
+}

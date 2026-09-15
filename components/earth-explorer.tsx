@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowUpRight, ChevronDown, Compass, Crosshair, Globe2, Info, Layers3, LocateFixed, Minus, Mountain, Navigation2, Plus, RotateCcw, Satellite, Settings2, X } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
@@ -9,6 +9,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Globe, loadCesium, type Surface, type TerrainPoint, type ViewInfo } from '@/lib/globe';
 import { GLOBE_VIEW_RANGE, TERRAIN_PLACES, TERRAIN_VIEW_ANGLE, nearestTerrainPlace } from '@/lib/terrain-view';
+import { TrafficPanel } from '@/components/traffic-panel';
+import { useTraffic } from '@/hooks/use-traffic';
+import type { TrafficLayers, TrafficTarget } from '@/lib/traffic';
 
 function coordinate(value:number, positive:string,negative:string) { return `${Math.abs(value).toFixed(3)}° ${value>=0?positive:negative}`; }
 function distance(m:number) { return m>=1000?`${(m/1000).toLocaleString(undefined,{maximumFractionDigits:m>100000?0:1})} km`:`${Math.round(m).toLocaleString()} m`; }
@@ -27,6 +30,10 @@ export default function EarthExplorer() {
   const [point,setPoint]=useState<TerrainPoint|null>(null),[notices,setNotices]=useState<Record<string,string>>({});
   const [panelOpen,setPanelOpen]=useState(false),[coordinates,setCoordinates]=useState(''),[coordinateError,setCoordinateError]=useState('');
   const [location,setLocation]=useState('Planet Earth');
+  const [trafficLayers,setTrafficLayers]=useState<TrafficLayers>({air:false,military:false,maritime:false});
+  const [selectedTraffic,setSelectedTraffic]=useState<TrafficTarget|null>(null);
+  const trafficFeeds=useTraffic(trafficLayers,ready,view.latitude,view.longitude);
+  const trafficTargets=useMemo(()=>[...trafficFeeds.air.targets,...trafficFeeds.maritime.targets].filter(target=>trafficLayers[target.kind]),[trafficFeeds.air.targets,trafficFeeds.maritime.targets,trafficLayers]);
   const notice=useCallback((key:string,message:string|null)=>setNotices(previous=>{const next={...previous};if(message) next[key]=message;else delete next[key];return next;}),[]);
   useEffect(()=>{
     let cancelled=false,engine:Globe|undefined;
@@ -36,7 +43,7 @@ export default function EarthExplorer() {
         const C=await loadCesium();
         if(cancelled||!canvasRef.current||!creditRef.current)return;
         engine=new Globe(C,canvasRef.current,creditRef.current,{
-          onView:setView,onPoint:setPoint,onTerrain:setTerrainReady,onNavigating:setNavigating,onLoading:setLoading,onNotice:notice,
+          onView:setView,onPoint:setPoint,onTerrain:setTerrainReady,onNavigating:setNavigating,onLoading:setLoading,onNotice:notice,onTraffic:setSelectedTraffic,
         });
         globeRef.current=engine;setReady(true);
         await engine.initialize();
@@ -50,6 +57,7 @@ export default function EarthExplorer() {
   useEffect(()=>{if(ready) globeRef.current?.setLabels(labels);},[ready,labels]);
   useEffect(()=>{if(ready) globeRef.current?.setExaggeration(exaggeration);},[ready,exaggeration]);
   useEffect(()=>{if(ready) globeRef.current?.setShading(shading);},[ready,shading]);
+  useEffect(()=>{if(ready) globeRef.current?.setTraffic(trafficTargets);},[ready,trafficTargets]);
   useEffect(()=>{if(!navigating)setAngleDraft(null);},[navigating]);
   const home=useCallback(()=>{globeRef.current?.home();setLocation('Planet Earth');},[]);
   const goTo=useCallback((lng:number,lat:number,range=14000,heading=0)=>{
@@ -117,7 +125,7 @@ export default function EarthExplorer() {
     <div ref={canvasRef} className="globe-canvas" aria-label="Interactive Earth: drag to orbit, scroll to zoom, right-drag to tilt; click terrain for elevation" />
     <div className="edge-shade" aria-hidden="true" />
     <header className="app-header">
-      <div className="brand"><span className="brand-mark"><Globe2 size={26} strokeWidth={1.4}/></span><div><h1>Atlas<span className="brand-period">.</span></h1><p>EARTH EXPLORER</p></div></div>
+      <div className="brand"><span className="brand-mark"><Globe2 size={26} strokeWidth={1.4}/></span><div><h1>Atlas<span className="brand-period">-Netic</span></h1><p>EARTH EXPLORER</p></div></div>
       <div className="header-actions">
         <span className="scale-pill"><Mountain size={15}/><span>{terrain?`${exaggeration.toFixed(1)}× terrain`:'Terrain off'}</span></span>
         <Dialog><DialogTrigger asChild><button className="quiet-button info-button"><Info size={18}/><span>Data & controls</span></button></DialogTrigger>
@@ -132,6 +140,11 @@ export default function EarthExplorer() {
               <h3>Imagery & borders</h3><p>Satellite imagery: Esri World Imagery, with optional Esri World Hillshade to bring out slope detail. Relief: Esri World Shaded Relief. Imagery is a collection from different dates, not a live feed. Image sharpness and elevation detail are independent.</p>
               <p>Country boundaries use Natural Earth’s 1:10 million land-boundary dataset. Dashed amber lines mark disputed or indefinite boundaries and lines of control. Borders are generalized, reflect the source’s de facto policy, and are not legal boundary surveys.</p>
               <a href="https://www.naturalearthdata.com/about/disputed-boundaries-policy/" target="_blank" rel="noreferrer">Natural Earth boundary policy <ArrowUpRight size={14}/></a>
+              <h3>Traffic & coverage</h3><p>Air traffic uses public ADS-B and multilateration reports from ADSB.lol within 250 nautical miles of your view center. The military switch filters aircraft marked military by that source. Classification can be incomplete; aircraft without received broadcasts do not appear.</p>
+              <p>Aircraft positions refresh every 20 seconds and expire after 90 seconds. Altitudes are reported geometric heights where available, otherwise barometric estimates; they are independent of terrain height exaggeration. Tap a marker for its latest reported position, speed, and timestamp.</p>
+              <p>The included maritime source is Fintraffic’s AIS reception from Finnish waterways and nearby Baltic waters. It refreshes every minute and hides reports older than 15 minutes. When a worldwide AIS provider is connected, the app shows that provider and its partial receiver coverage. Missing markers never mean that an area is empty.</p>
+              <a href="https://www.adsb.lol/docs/open-data/api/" target="_blank" rel="noreferrer">ADSB.lol · Open Database License <ArrowUpRight size={14}/></a>
+              <a href="https://www.digitraffic.fi/en/marine-traffic/" target="_blank" rel="noreferrer">Fintraffic / Digitraffic · CC BY 4.0 <ArrowUpRight size={14}/></a>
             </div>
           </DialogContent>
         </Dialog>
@@ -148,6 +161,7 @@ export default function EarthExplorer() {
       <div className="panel-section layers-section"><span className="section-label">MAP LAYERS</span><label className="layer-row" htmlFor="terrain-toggle"><span><Mountain size={17}/>3D terrain</span><Switch id="terrain-toggle" checked={terrain} onCheckedChange={setTerrain}/></label><label className="layer-row" htmlFor="shading-toggle"><span><Mountain size={17}/>Terrain shading</span><Switch id="shading-toggle" checked={shading} onCheckedChange={setShading}/></label><label className="layer-row" htmlFor="border-toggle"><span><Layers3 size={17}/>Country borders</span><Switch id="border-toggle" checked={borders} onCheckedChange={setBorders}/></label><label className="layer-row" htmlFor="label-toggle"><span><LocateFixed size={17}/>Country names</span><Switch id="label-toggle" checked={labels} onCheckedChange={setLabels}/></label>
         <div className="exaggeration-label"><label htmlFor="height-scale">Height scale</label><button disabled={exaggeration===1} onClick={()=>applyHeightScale(1)}>{exaggeration===1?'1× · real scale':`${exaggeration.toFixed(1)}× · reset`}</button></div><Slider id="height-scale" aria-label="Terrain height exaggeration" min={1} max={6} step={0.25} value={[exaggeration]} disabled={!terrain} onValueChange={([v])=>setExaggeration(v)} onValueCommit={([v])=>applyHeightScale(v)}/><div className="slider-labels"><span>1× real</span><span>6× exaggerated</span></div><div className="height-presets" role="group" aria-label="Height scale presets">{[1,2,4].map(scale=><button key={scale} disabled={!terrain||navigating} aria-pressed={exaggeration===scale} onClick={()=>applyHeightScale(scale)}>{scale}×{scale===1?' Real':''}</button>)}</div>
       </div>
+      <TrafficPanel layers={trafficLayers} onChange={setTrafficLayers} feeds={trafficFeeds} onBaltic={()=>{globeRef.current?.overview(24.8,59.7);setLocation('Gulf of Finland');setPanelOpen(false);}}/>
       <div className="panel-section terrain-destinations"><span className="section-label">EXPLORE THE TERRAIN</span><div className="destination-grid">{TERRAIN_PLACES.map(place=><button key={place.name} disabled={!ready} onClick={()=>{setLocation(place.name);goTo(place.lng,place.lat,place.range,place.heading);}} title={place.detail}><span>{place.name}</span><ArrowUpRight size={14}/></button>)}</div></div>
       <form className="coordinate-form" onSubmit={submitCoordinates}><label className="sr-only" htmlFor="coordinates">Latitude, longitude</label><div><Crosshair size={16}/><input id="coordinates" placeholder="Latitude, longitude" value={coordinates} onChange={event=>{setCoordinates(event.target.value);setCoordinateError('');}} aria-invalid={!!coordinateError} aria-describedby={coordinateError?'coordinate-error':undefined}/><button type="submit" disabled={!ready} aria-label="Go to coordinates"><ArrowUpRight size={17}/></button></div>{coordinateError&&<p id="coordinate-error">{coordinateError}</p>}</form>
     </aside>
@@ -161,6 +175,7 @@ export default function EarthExplorer() {
     {(!ready||fatal)&&<div className="globe-loading" role="status"><div className="loading-emblem"><Globe2 size={36}/></div><h2>{fatal?'The globe couldn’t start':'Opening Earth'}</h2><p>{fatal||'Loading your view of the planet…'}</p>{fatal&&<button className="primary-button" onClick={()=>setRetry(v=>v+1)}><RotateCcw size={16}/>Try again</button>}</div>}
     {Object.keys(notices).length>0&&<div className="notice glass" role="status"><Info size={17}/><div>{Object.entries(notices).map(([key,message])=><p key={key}>{message}</p>)}<button onClick={()=>setRetry(v=>v+1)}>Reload data</button></div></div>}
     {point&&<section className="elevation-card glass" aria-label="Selected terrain elevation"><div className="elevation-title"><span><Crosshair size={15}/>SURFACE ELEVATION</span><button aria-label="Close elevation" onClick={()=>globeRef.current?.clearPoint()}><X size={17}/></button></div><p className="elevation-value" aria-live="polite">{point.pending?'Sampling…':point.height===null?'Unavailable':<><span className="approximately">≈</span>{Math.round(point.height).toLocaleString()}<span className="elevation-unit">m</span></>}</p><p className="elevation-coordinates">{coordinate(point.latitude,'N','S')}<span> / </span>{coordinate(point.longitude,'E','W')}</p><button className="point-terrain-button" disabled={!ready||navigating} onClick={()=>applyAngle(TERRAIN_VIEW_ANGLE,true)}><Mountain size={16}/>View this point in 3D</button><p className="elevation-note">{point.height===null&&!point.pending?'No elevation sample is available here.':'Source elevation · unaffected by height scale'}</p></section>}
+    {selectedTraffic&&<section className="elevation-card traffic-card glass" aria-label="Selected transponder report"><div className="elevation-title"><span>{selectedTraffic.kind==='maritime'?'AIS VESSEL':selectedTraffic.kind==='military'?'MILITARY AIRCRAFT':'AIRCRAFT'}</span><button aria-label="Close traffic details" onClick={()=>globeRef.current?.clearTrafficSelection()}><X size={17}/></button></div><h2>{selectedTraffic.name}</h2><dl><dt>Position</dt><dd>{coordinate(selectedTraffic.latitude,'N','S')}<br/>{coordinate(selectedTraffic.longitude,'E','W')}</dd><dt>Speed</dt><dd>{selectedTraffic.speed===null?'Not reported':`${Math.round(selectedTraffic.speed)} kn`}</dd>{selectedTraffic.kind!=='maritime'&&<><dt>Altitude</dt><dd>{selectedTraffic.altitude===null?'Not reported':`${Math.round(selectedTraffic.altitude).toLocaleString()} m`}<small>{selectedTraffic.altitudeReference}</small></dd></>}<dt>Reported</dt><dd>{new Date(selectedTraffic.observedAt).toLocaleTimeString()}<small>{selectedTraffic.source}</small></dd></dl></section>}
     <div className="bottom-guide"><span className="location-name">{location}</span>{navigating&&<span className="navigation-progress" role="status">Loading terrain and adjusting your view…</span>}<p><span className="desktop-gesture">Drag to orbit<span>·</span>Scroll to zoom<span>·</span>Right-drag to tilt</span><span className="touch-gesture">Drag to orbit · Pinch to zoom · Two fingers to tilt</span></p></div>
     <footer className="telemetry"><div className="terrain-status"><span className={terrainReady&&terrain?'status-light':'status-light inactive'}/><span>{status}</span></div><div className="position-data"><span>{coordinate(view.latitude,'N','S')}</span><span>{coordinate(view.longitude,'E','W')}</span><span className="altitude"><small>CAM ALT</small>{distance(view.altitude)}</span></div><span className="click-hint"><Crosshair size={13}/>Click terrain for elevation</span></footer>
     <div ref={creditRef} className="map-credits" />

@@ -1,5 +1,7 @@
 import type * as Cesium from 'cesium';
 import { approachCoordinates, planTerrainApproach, TERRAIN_VIEW_ANGLE } from './terrain-view';
+import { showCountryLabels } from './country-labels';
+import type { TrafficTarget } from './traffic';
 
 type CModule = typeof Cesium;
 declare global { interface Window { Cesium?: CModule; CESIUM_BASE_URL?: string } }
@@ -13,6 +15,7 @@ export type GlobeCallbacks = {
   onNavigating: (active: boolean) => void;
   onLoading: (loading: boolean) => void;
   onNotice: (key: string, message: string | null) => void;
+  onTraffic: (target: TrafficTarget | null) => void;
 };
 export const TERRAIN_URL = 'https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer';
 const IMAGERY_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer';
@@ -54,7 +57,11 @@ export class Globe {
   private relief?: Cesium.ImageryLayer;
   private reliefLoading?: Promise<Cesium.ImageryLayer | undefined>;
   private borders?: Cesium.GeoJsonDataSource;
-  private labels: Cesium.CustomDataSource;
+  private labels: Cesium.LabelCollection;
+  private countryAnchors: { label: Cesium.Label; position: Cesium.Cartesian3; maximumDistance: number }[] = [];
+  private traffic: Cesium.CustomDataSource;
+  private trafficTargets = new Map<string, TrafficTarget>();
+  private selectedTrafficId?: string;
   private pin?: Cesium.Entity;
   private handler: Cesium.ScreenSpaceEventHandler;
   private cleanups: (() => void)[] = [];
@@ -119,10 +126,25 @@ export class Globe {
       callbacks.onNotice('render', '3D rendering paused. Reload the globe to continue.');
       console.error('Globe render error', error);
     }));
-    this.labels = new C.CustomDataSource('country-labels');
-    void v.dataSources.add(this.labels);
+    this.labels = v.scene.primitives.add(new C.LabelCollection({ scene: v.scene }));
+    this.traffic = new C.CustomDataSource('transponder-traffic');
+    void v.dataSources.add(this.traffic);
+    this.cleanups.push(v.scene.preRender.addEventListener(() => this.updateCountryLabels()));
+    const resize = new ResizeObserver(() => {
+      if (this.disposed) return;
+      v.resolutionScale = Math.min(window.devicePixelRatio || 1, 1.75) / (window.devicePixelRatio || 1);
+      v.resize(); this.render();
+    });
+    resize.observe(element);
+    this.cleanups.push(() => resize.disconnect());
     this.handler = new C.ScreenSpaceEventHandler(v.scene.canvas);
     this.handler.setInputAction((event: {position: Cesium.Cartesian2}) => {
+      const picked = v.scene.pick(event.position);
+      const target = picked?.id instanceof C.Entity ? this.trafficTargets.get(picked.id.id) : undefined;
+      if (target) {
+        this.clearPoint(); this.selectedTrafficId = target.id; this.callbacks.onTraffic(target); return;
+      }
+      this.clearTrafficSelection();
       const ray = v.camera.getPickRay(event.position);
       const point = ray && v.scene.globe.pick(ray, v.scene);
       if (point) {
@@ -189,20 +211,90 @@ export class Globe {
           const response = await fetch('/data/countries.json'); if (!response.ok) throw new Error('Labels unavailable');
           const countries = await response.json() as {name:string;lat:number;lng:number;size:number}[];
           if (this.disposed) return;
-          for (const country of countries) {
+          for (const country of countries.sort((a,b) => a.size-b.size)) {
             if (!Number.isFinite(country.lat) || !Number.isFinite(country.lng)) continue;
-            this.labels.entities.add({position:C.Cartesian3.fromDegrees(country.lng,country.lat,1500),label:{
+            // Fixed geodetic anchors avoid asynchronous terrain-clamp positions lingering after zooms.
+            // Explicit horizon and viewport culling below permits overlay text without showing far-side labels.
+            const position = C.Cartesian3.fromDegrees(country.lng,country.lat);
+            const label = this.labels.add({position,
               text:country.name, font:'500 13px Arial', fillColor:C.Color.fromCssColorString('#eef4f8').withAlpha(0.87),
               outlineColor:C.Color.fromCssColorString('#0a1724'), outlineWidth:3, style:C.LabelStyle.FILL_AND_OUTLINE,
-              heightReference:C.HeightReference.CLAMP_TO_GROUND,
-              distanceDisplayCondition:new C.DistanceDisplayCondition(30000,country.size<=2?32000000:country.size<=4?11500000:4500000),
+              heightReference:C.HeightReference.NONE, disableDepthTestDistance:Number.POSITIVE_INFINITY,
               scaleByDistance:new C.NearFarScalar(100000,0.9,30000000,0.8),
-            }});
+            });
+            this.countryAnchors.push({label,position,maximumDistance:country.size<=2?32000000:country.size<=4?11500000:4500000});
           }
-          this.labels.show=this.labelsVisible; this.render();
+          this.updateCountryLabels(); this.render();
         } catch { if (!this.disposed) this.callbacks.onNotice('labels', 'Country names could not load.'); }
       })(),
     ]);
+  }
+  private updateCountryLabels() {
+    if (this.disposed) return;
+    const C = this.C, v = this.viewer, camera = v.camera, width = v.canvas.clientWidth, height = v.canvas.clientHeight;
+    this.labels.show = showCountryLabels(this.labelsVisible, camera.positionCartographic.height, width, C.Math.toDegrees(camera.pitch));
+    if (!this.labels.show) return;
+    const ellipsoid = v.scene.globe.ellipsoid;
+    const scaledCamera = ellipsoid.transformPositionToScaledSpace(camera.positionWC, new C.Cartesian3());
+    const occupied: { x: number; y: number; halfWidth: number }[] = [];
+    const direction = new C.Cartesian3();
+    for (const { label, position, maximumDistance } of this.countryAnchors) {
+      // On a unit sphere a surface anchor is beyond the horizon when camera · anchor <= 1.
+      const scaledAnchor = ellipsoid.transformPositionToScaledSpace(position, new C.Cartesian3());
+      if (C.Cartesian3.dot(scaledCamera, scaledAnchor) <= 1.002 || C.Cartesian3.distance(camera.positionWC, position) > maximumDistance) { label.show = false; continue; }
+      if (C.Cartesian3.dot(C.Cartesian3.subtract(position, camera.positionWC, direction), camera.directionWC) <= 0) { label.show = false; continue; }
+      const screen = C.SceneTransforms.worldToWindowCoordinates(v.scene, position);
+      const halfWidth = Math.max(24, label.text.length * 3.4);
+      if (!screen || screen.x < halfWidth || screen.x > width-halfWidth || screen.y < 20 || screen.y > height-20) { label.show = false; continue; }
+      if (occupied.some(other => Math.abs(screen.x-other.x) < halfWidth+other.halfWidth+10 && Math.abs(screen.y-other.y) < 26)) { label.show = false; continue; }
+      label.show = true;
+      occupied.push({ x: screen.x, y: screen.y, halfWidth });
+    }
+  }
+
+  setTraffic(targets: TrafficTarget[]) {
+    if (this.disposed) return;
+    const C = this.C, entities = this.traffic.entities;
+    this.trafficTargets = new Map(targets.map(target => [target.id, target]));
+    entities.suspendEvents();
+    try {
+      for (const entity of [...entities.values]) if (!this.trafficTargets.has(entity.id)) entities.remove(entity);
+      for (const target of targets) {
+        const position = C.Cartesian3.fromDegrees(target.longitude, target.latitude, Math.max(0, target.altitude ?? 0));
+        const north = C.Matrix4.multiplyByPointAsVector(C.Transforms.eastNorthUpToFixedFrame(position), C.Cartesian3.UNIT_Y, new C.Cartesian3());
+        let entity = entities.getById(target.id);
+        if (!entity) {
+          const color = target.kind === 'military' ? '#ffbd75' : target.kind === 'maritime' ? '#8ecbff' : '#a4ecdb';
+          const shape = target.kind === 'maritime' ? 'M16 3L24 12V26L16 30L8 26V12Z' : 'M16 2L19 12L29 19V22L19 19L18 27L22 29V31L16 29L10 31V29L14 27L13 19L3 22V19L13 12Z';
+          const image = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="${shape}" fill="${color}" stroke="#081421" stroke-width="1.5"/></svg>`)}`;
+          entity = entities.add({ id: target.id, name: target.name, position, billboard: {
+            image, width: target.kind === 'maritime' ? 18 : 22, height: target.kind === 'maritime' ? 18 : 22,
+            heightReference: target.altitudeReference === 'surface' || target.altitude === null ? C.HeightReference.CLAMP_TO_GROUND : C.HeightReference.NONE,
+            disableDepthTestDistance: 0, alignedAxis: north, rotation: C.Math.toRadians(-(target.heading ?? 0)),
+            scaleByDistance: new C.NearFarScalar(1000, 1.2, 20000000, 0.7),
+          } });
+        } else {
+          entity.name = target.name;
+          entity.position = new C.ConstantPositionProperty(position);
+          if (entity.billboard) {
+            entity.billboard.rotation = new C.ConstantProperty(C.Math.toRadians(-(target.heading ?? 0)));
+            entity.billboard.alignedAxis = new C.ConstantProperty(north);
+            entity.billboard.heightReference = new C.ConstantProperty(target.altitudeReference === 'surface' || target.altitude === null ? C.HeightReference.CLAMP_TO_GROUND : C.HeightReference.NONE);
+          }
+        }
+      }
+    } finally { entities.resumeEvents(); }
+    if (this.selectedTrafficId) {
+      const selected = this.trafficTargets.get(this.selectedTrafficId);
+      if (selected) this.callbacks.onTraffic(selected); else this.clearTrafficSelection();
+    }
+    this.render();
+  }
+  clearTrafficSelection() { this.selectedTrafficId = undefined; this.callbacks.onTraffic(null); }
+  overview(lng: number, lat: number, altitude = 650000) {
+    this.cancelNavigation(); this.clearPoint(); this.clearTrafficSelection();
+    this.viewer.camera.flyTo({ destination: this.C.Cartesian3.fromDegrees(lng, lat, altitude), duration: this.duration(1.6),
+      orientation: { heading: 0, pitch: -this.C.Math.PI_OVER_TWO, roll: 0 } });
   }
   private ensureTerrain() {
     this.terrainLoading ??= this.C.ArcGISTiledElevationTerrainProvider.fromUrl(TERRAIN_URL).then(terrain => {
@@ -302,7 +394,7 @@ export class Globe {
     this.viewer.scene.verticalExaggeration=enabled?this.desiredExaggeration:1; this.updateTerrainAppearance(); this.render();
   }
   setBorders(enabled:boolean) { this.bordersVisible=enabled; if(this.borders) this.borders.show=enabled; this.render(); }
-  setLabels(enabled:boolean) { this.labelsVisible=enabled; this.labels.show=enabled; this.render(); }
+  setLabels(enabled:boolean) { this.labelsVisible=enabled; this.updateCountryLabels(); this.render(); }
   setExaggeration(value:number) { this.desiredExaggeration=value; this.viewer.scene.verticalExaggeration=this.desiredTerrain?value:1; this.render(); }
   async setAngle(angle:number) {
     const C=this.C, camera=this.viewer.camera, center=this.center();
