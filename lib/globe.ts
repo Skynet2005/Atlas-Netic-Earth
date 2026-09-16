@@ -64,6 +64,7 @@ export class Globe {
   private traffic: Cesium.CustomDataSource;
   private workspace: Cesium.CustomDataSource;
   private trafficTargets = new Map<string, TrafficTarget>();
+  private lastModelUpdate=0;
   private selectedTrafficId?: string;
   private graphicsQuality: 'eco'|'balanced'|'detail' = 'balanced';
   private lastCameraSave = 0;
@@ -255,7 +256,7 @@ export class Globe {
     for(const target of this.trafficTargets.values()) {
       const ground=C.Cartesian3.fromDegrees(target.longitude,target.latitude);
       if(C.Cartesian3.dot(cam,ellipsoid.transformPositionToScaledSpace(ground,new C.Cartesian3()))<=1)continue;
-      const position=C.Cartesian3.fromDegrees(target.longitude,target.latitude,Math.max(0,target.altitude??0));
+      const position=C.Cartesian3.fromDegrees(target.longitude,target.latitude,target.altitude??0);
       if(C.Cartesian3.dot(C.Cartesian3.subtract(position,v.camera.positionWC,new C.Cartesian3()),v.camera.directionWC)<=0)continue;
       const screen=C.SceneTransforms.worldToWindowCoordinates(v.scene,position);
       if(!screen)continue;const distance=Math.hypot(screen.x-pixel.x,screen.y-pixel.y);
@@ -346,6 +347,23 @@ export class Globe {
     }
   }
 
+  private updateTrafficModels() {
+    if(!this.traffic || this.disposed)return;
+    const C=this.C, camera=this.viewer.camera.positionWC;
+    const candidates=[...this.trafficTargets.values()].filter(t=>t.altitude!==null && t.heading!==null).map(t=>({t,d:C.Cartesian3.distance(camera,C.Cartesian3.fromDegrees(t.longitude,t.latitude,t.altitude!))})).filter(v=>v.d<80000).sort((a,b)=>a.d-b.d).slice(0,this.graphicsQuality==='eco'?24:48);
+    const chosen=new Set(candidates.map(v=>v.t.id));
+    for(const entity of this.traffic.entities.values){
+      const t=this.trafficTargets.get(entity.id);if(!t)continue;
+      const show=chosen.has(entity.id);
+      if(entity.billboard)entity.billboard.show=new C.ConstantProperty(!show);
+      if(!show){entity.model=undefined;continue;}
+      if(!entity.model)entity.model=new C.ModelGraphics({uri:t.kind==='maritime'?'/models/vessel.gltf':'/models/aircraft.gltf',minimumPixelSize:32,maximumScale:8,runAnimations:false,shadows:C.ShadowMode.DISABLED,enableVerticalExaggeration:false,heightReference:t.altitudeReference==='surface'?C.HeightReference.CLAMP_TO_GROUND:C.HeightReference.NONE});
+      entity.model.heightReference=new C.ConstantProperty(t.altitudeReference==='surface'?C.HeightReference.CLAMP_TO_GROUND:C.HeightReference.NONE);
+      entity.orientation=new C.ConstantProperty(C.Transforms.headingPitchRollQuaternion(C.Cartesian3.fromDegrees(t.longitude,t.latitude,t.altitude!),new C.HeadingPitchRoll(C.Math.toRadians(t.heading!-90),0,0)));
+    }
+    this.render();
+  }
+
   setTraffic(targets: TrafficTarget[]) {
     if (this.disposed) return;
     const C = this.C, entities = this.traffic.entities;
@@ -354,7 +372,7 @@ export class Globe {
     try {
       for (const entity of [...entities.values]) if (!this.trafficTargets.has(entity.id)) entities.remove(entity);
       for (const target of targets) {
-        const position = C.Cartesian3.fromDegrees(target.longitude, target.latitude, Math.max(0, target.altitude ?? 0));
+        const position = C.Cartesian3.fromDegrees(target.longitude, target.latitude, target.altitude ?? 0);
         const north = C.Matrix4.multiplyByPointAsVector(C.Transforms.eastNorthUpToFixedFrame(position), C.Cartesian3.UNIT_Y, new C.Cartesian3());
         let entity = entities.getById(target.id);
         if (!entity) {
@@ -378,6 +396,7 @@ export class Globe {
         }
       }
     } finally { entities.resumeEvents(); }
+    this.updateTrafficModels();
     if (this.selectedTrafficId) {
       const selected = this.trafficTargets.get(this.selectedTrafficId);
       if (selected) this.callbacks.onTraffic(selected); // Keep an opened report available when it leaves the feed.
@@ -451,6 +470,7 @@ export class Globe {
   reportView(force=false) {
     if(this.disposed || (!force && performance.now()-this.lastViewTime<140)) return;
     this.lastViewTime=performance.now();
+    if(force||performance.now()-this.lastModelUpdate>750){this.lastModelUpdate=performance.now();this.updateTrafficModels();}
     if(force || performance.now()-this.lastCameraSave>1000) this.saveCamera();
     const C=this.C, camera=this.viewer.camera, position=camera.positionCartographic;
     const center=this.center(); const geo=center?C.Cartographic.fromCartesian(center):position;

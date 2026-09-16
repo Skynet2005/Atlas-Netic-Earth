@@ -2,7 +2,7 @@ export type TrafficKind = 'air' | 'military' | 'maritime';
 export type TrafficTarget = {
   id: string; kind: TrafficKind; name: string; registration?: string; aircraftType?: string; squawk?: string; verticalRate?: number | null; latitude: number; longitude: number;
   altitude: number | null; altitudeReference: 'geometric' | 'barometric' | 'surface' | 'unknown';
-  speed: number | null; heading: number | null; observedAt: number; source: string;
+  headingReference?: 'true heading' | 'course over ground' | 'unknown'; speed: number | null; heading: number | null; observedAt: number; source: string;
 };
 export type TrafficSnapshot = {
   targets: TrafficTarget[]; fetchedAt: number; source: string; coverage: string; limited?: boolean;
@@ -36,7 +36,7 @@ export function parseAircraft(payload: unknown, now = Date.now()): TrafficTarget
       name: text(a.flight) || text(a.r) || id.toUpperCase(), registration:text(a.r), aircraftType:text(a.t), squawk:text(a.squawk), verticalRate:number(a.geom_rate)??number(a.baro_rate), latitude: a.lat as number, longitude: a.lon as number,
       altitude: ground ? 0 : height === null ? null : height * 0.3048,
       altitudeReference: ground ? 'surface' : geometric !== null ? 'geometric' : barometric !== null ? 'barometric' : 'unknown',
-      speed: number(a.gs), heading: heading(a.track), observedAt: epoch - age * 1000, source: 'ADSB.lol',
+      speed: number(a.gs), heading: heading(a.true_heading) ?? heading(a.track), headingReference: heading(a.true_heading)!==null?'true heading':heading(a.track)!==null?'course over ground':'unknown', observedAt: epoch - age * 1000, source: 'ADSB.lol',
     };
     if (isFreshTarget(target, now)) targets.set(target.id, target);
   }
@@ -58,7 +58,7 @@ export function parseVessels(payload: unknown, now = Date.now()): TrafficTarget[
       id: `ship:${mmsi}`, kind: 'maritime', name: text(p.name) || `MMSI ${mmsi}`,
       longitude: coords[0], latitude: coords[1], altitude: 0, altitudeReference: 'surface',
       speed: speed !== null && speed < 102.3 && speed >= 0 ? speed : null,
-      heading: heading(p.heading) ?? heading(p.cog),
+      heading: heading(p.heading) ?? heading(p.cog), headingReference:heading(p.heading)!==null?'true heading':heading(p.cog)!==null?'course over ground':'unknown',
       observedAt: timestamp < 1e12 ? timestamp * 1000 : timestamp, source: 'Fintraffic / Digitraffic',
     };
     if (isFreshTarget(target, now)) targets.set(target.id, target);
@@ -79,7 +79,7 @@ export function parseAISMessage(payload: unknown, now = Date.now()): TrafficTarg
   const target: TrafficTarget = { id: `ship:${mmsi}`, kind: 'maritime', name: text(meta.ShipName) || `MMSI ${mmsi}`,
     latitude: latitude!, longitude: longitude!, altitude: 0, altitudeReference: 'surface',
     speed: speed !== null && speed < 102.3 && speed >= 0 ? speed : null,
-    heading: heading(message.TrueHeading) ?? heading(message.Cog), observedAt, source: 'AISStream' };
+    heading: heading(message.TrueHeading) ?? heading(message.Cog), headingReference:heading(message.TrueHeading)!==null?'true heading':heading(message.Cog)!==null?'course over ground':'unknown', observedAt, source: 'AISStream' };
   return Number.isFinite(observedAt) && isFreshTarget(target, now) ? target : null;
 }
 

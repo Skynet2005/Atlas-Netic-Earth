@@ -43,3 +43,11 @@ Camera location and orientation are saved during navigation and restored after r
 Traffic polling starts independently of terrain initialization, uses 15-second aircraft and 45-second vessel refresh intervals, and does not abort on every camera movement. Fresh reports remain visible during temporary failures; expired reports are removed. Optional AISStream collection now waits up to 4 seconds for its first sample. Coverage and upstream availability still affect loading.
 
 The lazy-loaded **Tools** workspace includes [100 additional tools](FEATURES.md): 40 map/traffic workflows and 60 calculators. No simulated traffic is displayed.
+
+## Altitude units and 3D traffic
+
+Altitude defaults to thousands of feet (`kft`); 35 kft means 35,000 feet. Change **Altitude units** in Data & controls or Tools → Display. The browser remembers the setting. Camera altitude, inspected elevation, report cards, comparison cards, traffic altitude filters/CSV, and terrain profiles follow it. Internal coordinates and the explicitly labelled engineering calculator inputs remain in their stated units.
+
+Original bundled glTF aircraft and vessel silhouettes appear for nearby reports with known height and direction. Up to 24 models in Eco or 48 otherwise are shown within 80 km of the camera; other reports retain selectable markers. Models have a 32-pixel visibility target capped at 8× size, so their apparent dimensions are illustrative. Position is the latest received longitude/latitude/height, never extrapolated or vertically exaggerated. Direction prefers reported true heading, with course over ground as a labelled fallback; pitch/roll are level because attitude is not supplied. Aircraft geometric altitude is preferred; uncorrected barometric altitude is a labelled fallback. Surface reports clamp to the terrain/sea surface. Unknown height is a horizontal-location marker only. This does not correct upstream errors, report latency, pressure or geoid differences. Generic silhouettes do not claim an exact airframe or ship class.
+
+Regenerate the original low-poly assets with `node scripts/build-traffic-models.mjs`. Their glTF Z-forward/Y-up axes and cardinal orientation are regression-tested.
