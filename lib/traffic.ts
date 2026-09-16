@@ -98,3 +98,10 @@ export function aisBoundingBoxes(latitude: number, longitude: number) {
   if (east > 180) return [[[south, west], [north, 180]], [[south, -180], [north, east - 360]]];
   return [[[south, west], [north, east]]];
 }
+
+/** Merge regional snapshots without discarding fresh reports when the camera pans. */
+export function mergeTrafficReports(previous:TrafficTarget[],incoming:TrafficTarget[],now=Date.now()):TrafficTarget[]{
+ const reports=new Map(previous.filter(t=>isFreshTarget(t,now)).map(t=>[t.id,t]));
+ for(const report of incoming){if(!isFreshTarget(report,now))continue;const old=reports.get(report.id);if(!old||report.observedAt>old.observedAt)reports.set(report.id,report);}
+ return [...reports.values()];
+}

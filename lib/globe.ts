@@ -64,7 +64,6 @@ export class Globe {
   private traffic: Cesium.CustomDataSource;
   private workspace: Cesium.CustomDataSource;
   private trafficTargets = new Map<string, TrafficTarget>();
-  private lastModelUpdate=0;
   private selectedTrafficId?: string;
   private graphicsQuality: 'eco'|'balanced'|'detail' = 'balanced';
   private lastCameraSave = 0;
@@ -347,56 +346,38 @@ export class Globe {
     }
   }
 
-  private updateTrafficModels() {
-    if(!this.traffic || this.disposed)return;
-    const C=this.C, camera=this.viewer.camera.positionWC;
-    const candidates=[...this.trafficTargets.values()].filter(t=>t.altitude!==null && t.heading!==null).map(t=>({t,d:C.Cartesian3.distance(camera,C.Cartesian3.fromDegrees(t.longitude,t.latitude,t.altitude!))})).filter(v=>v.d<80000).sort((a,b)=>a.d-b.d).slice(0,this.graphicsQuality==='eco'?24:48);
-    const chosen=new Set(candidates.map(v=>v.t.id));
-    for(const entity of this.traffic.entities.values){
-      const t=this.trafficTargets.get(entity.id);if(!t)continue;
-      const show=chosen.has(entity.id);
-      if(entity.billboard)entity.billboard.show=new C.ConstantProperty(!show);
-      if(!show){entity.model=undefined;continue;}
-      if(!entity.model)entity.model=new C.ModelGraphics({uri:t.kind==='maritime'?'/models/vessel.gltf':'/models/aircraft.gltf',minimumPixelSize:32,maximumScale:8,runAnimations:false,shadows:C.ShadowMode.DISABLED,enableVerticalExaggeration:false,heightReference:t.altitudeReference==='surface'?C.HeightReference.CLAMP_TO_GROUND:C.HeightReference.NONE});
-      entity.model.heightReference=new C.ConstantProperty(t.altitudeReference==='surface'?C.HeightReference.CLAMP_TO_GROUND:C.HeightReference.NONE);
-      entity.orientation=new C.ConstantProperty(C.Transforms.headingPitchRollQuaternion(C.Cartesian3.fromDegrees(t.longitude,t.latitude,t.altitude!),new C.HeadingPitchRoll(C.Math.toRadians(t.heading!-90),0,0)));
-    }
-    this.render();
-  }
-
   setTraffic(targets: TrafficTarget[]) {
     if (this.disposed) return;
     const C = this.C, entities = this.traffic.entities;
+    const previousTargets=this.trafficTargets;
     this.trafficTargets = new Map(targets.map(target => [target.id, target]));
     entities.suspendEvents();
     try {
       for (const entity of [...entities.values]) if (!this.trafficTargets.has(entity.id)) entities.remove(entity);
       for (const target of targets) {
+        if(previousTargets.get(target.id)===target&&entities.getById(target.id))continue;
         const position = C.Cartesian3.fromDegrees(target.longitude, target.latitude, target.altitude ?? 0);
-        const north = C.Matrix4.multiplyByPointAsVector(C.Transforms.eastNorthUpToFixedFrame(position), C.Cartesian3.UNIT_Y, new C.Cartesian3());
         let entity = entities.getById(target.id);
+        const ground = target.altitudeReference === 'surface' || target.altitude === null;
+        const reference = ground ? C.HeightReference.CLAMP_TO_GROUND : C.HeightReference.NONE;
+        const orientation = C.Transforms.headingPitchRollQuaternion(position,new C.HeadingPitchRoll(C.Math.toRadians((target.heading ?? 0)-90),0,0));
         if (!entity) {
-          const color = target.kind === 'military' ? '#ffbd75' : target.kind === 'maritime' ? '#8ecbff' : '#a4ecdb';
-          const shape = target.kind === 'maritime' ? 'M16 3L24 12V26L16 30L8 26V12Z' : 'M16 2L19 12L29 19V22L19 19L18 27L22 29V31L16 29L10 31V29L14 27L13 19L3 22V19L13 12Z';
-          const image = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="${shape}" fill="${color}" stroke="#081421" stroke-width="1.5"/></svg>`)}`;
-          entity = entities.add({ id: target.id, name: target.name, position, billboard: {
-            image, width: target.kind === 'maritime' ? 24 : 30, height: target.kind === 'maritime' ? 24 : 30,
-            heightReference: target.altitudeReference === 'surface' || target.altitude === null ? C.HeightReference.CLAMP_TO_GROUND : C.HeightReference.NONE,
-            disableDepthTestDistance: 0, alignedAxis: north, rotation: C.Math.toRadians(-(target.heading ?? 0)),
-            scaleByDistance: new C.NearFarScalar(1000, 1.2, 20000000, 0.7),
-          } });
+          // Stable entity/model per report ID. All use two shared cached mesh URLs.
+          // Cesium culls offscreen models without destroying them as the camera moves.
+          entity = entities.add({id:target.id,name:target.name,position,orientation,
+            model:{uri:target.kind==='maritime'?'/models/vessel.gltf':'/models/aircraft.gltf',
+              minimumPixelSize:22,runAnimations:false,incrementallyLoadTextures:false,
+              shadows:C.ShadowMode.DISABLED,enableVerticalExaggeration:false,
+              heightReference:reference,color:C.Color.fromCssColorString(target.heading===null||target.altitude===null?'#b9bec6':target.kind==='military'?'#ffbd75':target.kind==='maritime'?'#8ecbff':'#a4ecdb'),
+              colorBlendMode:C.ColorBlendMode.MIX,colorBlendAmount:0.35}});
         } else {
-          entity.name = target.name;
-          entity.position = new C.ConstantPositionProperty(position);
-          if (entity.billboard) {
-            entity.billboard.rotation = new C.ConstantProperty(C.Math.toRadians(-(target.heading ?? 0)));
-            entity.billboard.alignedAxis = new C.ConstantProperty(north);
-            entity.billboard.heightReference = new C.ConstantProperty(target.altitudeReference === 'surface' || target.altitude === null ? C.HeightReference.CLAMP_TO_GROUND : C.HeightReference.NONE);
-          }
+          entity.name=target.name;
+          entity.position=new C.ConstantPositionProperty(position);
+          entity.orientation=new C.ConstantProperty(orientation);
+          if(entity.model){entity.model.heightReference=new C.ConstantProperty(reference);entity.model.color=new C.ConstantProperty(C.Color.fromCssColorString(target.heading===null||target.altitude===null?'#b9bec6':target.kind==='military'?'#ffbd75':target.kind==='maritime'?'#8ecbff':'#a4ecdb'));}
         }
       }
     } finally { entities.resumeEvents(); }
-    this.updateTrafficModels();
     if (this.selectedTrafficId) {
       const selected = this.trafficTargets.get(this.selectedTrafficId);
       if (selected) this.callbacks.onTraffic(selected); // Keep an opened report available when it leaves the feed.
@@ -470,7 +451,6 @@ export class Globe {
   reportView(force=false) {
     if(this.disposed || (!force && performance.now()-this.lastViewTime<140)) return;
     this.lastViewTime=performance.now();
-    if(force||performance.now()-this.lastModelUpdate>750){this.lastModelUpdate=performance.now();this.updateTrafficModels();}
     if(force || performance.now()-this.lastCameraSave>1000) this.saveCamera();
     const C=this.C, camera=this.viewer.camera, position=camera.positionCartographic;
     const center=this.center(); const geo=center?C.Cartographic.fromCartesian(center):position;

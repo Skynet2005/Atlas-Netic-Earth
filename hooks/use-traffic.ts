@@ -1,6 +1,6 @@
 "use client";
 import {useEffect,useRef,useState,useCallback} from 'react';
-import {isFreshTarget,type TrafficLayers,type TrafficSnapshot,type TrafficTarget} from '@/lib/traffic';
+import {mergeTrafficReports,isFreshTarget,type TrafficLayers,type TrafficSnapshot,type TrafficTarget} from '@/lib/traffic';
 import {distanceKm} from '@/lib/geo';
 type FeedState={targets:TrafficTarget[];phase:'off'|'loading'|'live'|'error';message:string;updatedAt:number|null;limited:boolean};
 const empty:FeedState={targets:[],phase:'off',message:'',updatedAt:null,limited:false};
@@ -14,7 +14,7 @@ function useFeed(feed:'air'|'maritime',enabled:boolean,latitude:number,longitude
   const controller=new AbortController();let busy=false,lastRequest=0;
   let region=position.current,targets=new Map<string,TrafficTarget>();
   const old=cache.get(feed);
-  if(old&&distanceKm(region.latitude,region.longitude,old.latitude,old.longitude)<150){targets=new Map(old.state.targets.filter(t=>isFreshTarget(t)).map(t=>[t.id,t]));setState({...old.state,targets:[...targets.values()]});}
+  if(old){targets=new Map(old.state.targets.filter(t=>isFreshTarget(t)).map(t=>[t.id,t]));setState({...old.state,targets:[...targets.values()]});}
   else setState({...empty,phase:'loading'});
   const interval=feed==='air'?15000:45000;
   const refresh=async()=>{
@@ -27,9 +27,7 @@ function useFeed(feed:'air'|'maritime',enabled:boolean,latitude:number,longitude
     const data=await response.json() as TrafficSnapshot&{error?:string};
     if(!response.ok||!Array.isArray(data.targets))throw new Error(data.error||'Feed unavailable. Retrying.');
     if(controller.signal.aborted)return;
-    if(feed==='air'||data.source!=='AISStream')targets.clear();
-    for(const target of data.targets)targets.set(target.id,target);
-    for(const[id,t]of targets)if(!isFreshTarget(t)||distanceKm(requested.latitude,requested.longitude,t.latitude,t.longitude)>650)targets.delete(id);
+    targets=new Map(mergeTrafficReports([...targets.values()],data.targets).map(t=>[t.id,t]));
     const next:FeedState={targets:[...targets.values()],phase:'live',message:data.coverage,updatedAt:data.fetchedAt,limited:!!data.limited};
     cache.set(feed,{...requested,state:next});setState(next);
    }catch(error){if(!controller.signal.aborted)setState(old=>({...old,targets:old.targets.filter(t=>isFreshTarget(t)),phase:'error',message:(error instanceof Error?error.message:'Feed unavailable')+' Last fresh reports retained.'}));}
