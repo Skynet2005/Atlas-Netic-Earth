@@ -26,9 +26,9 @@ Satellite imagery and relief are provided by Esri; borders and labels are from N
 
 ## Transponder layers
 
-- Air and publicly identified military aircraft: ADSB.lol open API (ODbL 1.0), within 250 nautical miles of the view center. Refreshed every 20 seconds; position reports expire at 90 seconds. Military classification is a provider flag, not a complete inventory.
-- Maritime default: Fintraffic / Digitraffic AIS (CC BY 4.0), Finnish waters and nearby Baltic reception. Refreshed every 60 seconds; position reports expire at 15 minutes.
-- Optional wider maritime coverage: add `AISSTREAM_API_KEY` as a secret Vercel environment variable and redeploy. The server collects a bounded, partial 12-second live sample near the view center. The browser never receives the key. No key is needed for the included regional feed.
+- Air and publicly identified military aircraft: ADSB.lol open API (ODbL 1.0), within 250 nautical miles of the view center. Refreshed every 15 seconds; position reports expire at 90 seconds. Military classification is a provider flag, not a complete inventory.
+- Maritime default: Fintraffic / Digitraffic AIS (CC BY 4.0), Finnish waters and nearby Baltic reception. Refreshed every 45 seconds; position reports expire at 15 minutes.
+- Optional wider maritime coverage: add `AISSTREAM_API_KEY` as a secret Vercel environment variable and redeploy. The server collects a bounded, partial 4-second live sample near the view center. The browser never receives the key. No key is needed for the included regional feed.
 
 AISStream allows only three subscribed connections per account. Requests are coalesced and cached within a function instance. For multi-user/high-volume global use, replace the short collector with a persistent shared AIS service; serverless instances cannot share the connection limit.
 
