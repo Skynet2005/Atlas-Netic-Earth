@@ -26,11 +26,11 @@ export function TrafficPanel({ layers, onChange, feeds, onBaltic }: {
         </p>}
       </div>;
     })}
-    {(layers.air || layers.military) && <p className="traffic-note">Aircraft refresh every 20 seconds. Only received public broadcasts appear. Military identification is supplied by the feed and may be incomplete.</p>}
+    {(layers.air || layers.military) && <p className="traffic-note">Aircraft refresh every 15 seconds. Only received public broadcasts appear. Military identification is supplied by the feed and may be incomplete.</p>}
     {layers.maritime && <div className="traffic-note">
       <p>{feeds.maritime.phase === 'loading' ? 'Checking AIS coverage…' : feeds.maritime.message}</p>
       {feeds.maritime.limited && <><button className="traffic-link" onClick={onBaltic}>Explore Baltic AIS coverage ↗</button><p>Worldwide AIS requires a connected provider. This open feed covers Finnish waters.</p></>}
-      <p>Updates every 60 seconds. Vessel reports expire after 15 minutes.</p>
+      <p>Updates every 45 seconds. Vessel reports expire after 15 minutes.</p>
     </div>}
     <p className="traffic-source"><a href="https://www.adsb.lol/docs/open-data/api/" target="_blank" rel="noreferrer">ADSB.lol · ODbL</a><span> · </span><a href="https://www.digitraffic.fi/en/marine-traffic/" target="_blank" rel="noreferrer">Fintraffic · CC BY 4.0</a>{feeds.maritime.phase === 'live' && !feeds.maritime.limited && <> · <a href="https://aisstream.io" target="_blank" rel="noreferrer">AISStream</a></>}</p>
   </section>;

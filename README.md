@@ -35,3 +35,11 @@ AISStream allows only three subscribed connections per account. Requests are coa
 No simulated traffic is shown. Receivers and transponders have incomplete coverage; a zero count is not proof of empty airspace or sea. Geometric aircraft altitudes are preferred; barometric fallback is labeled. Missing altitude is shown on the surface and marked unknown.
 
 Country names use fixed geodetic anchors, horizon/viewport culling, overlap suppression, and automatically hide for close terrain views (below 250 km on mobile, 180 km on desktop).
+
+## Recovery and utility workspace
+
+Camera location and orientation are saved during navigation and restored after recovery or reload. Phones default to reduced pixel and tile-memory budgets. Recovery uses Eco graphics. Touch picking uses a larger hit area; the searchable traffic roster offers another way to select reports. Open report details remain available if the report leaves the current feed.
+
+Traffic polling starts independently of terrain initialization, uses 15-second aircraft and 45-second vessel refresh intervals, and does not abort on every camera movement. Fresh reports remain visible during temporary failures; expired reports are removed. Optional AISStream collection now waits up to 4 seconds for its first sample. Coverage and upstream availability still affect loading.
+
+The lazy-loaded **Tools** workspace includes [100 additional tools](FEATURES.md): 40 map/traffic workflows and 60 calculators. No simulated traffic is displayed.

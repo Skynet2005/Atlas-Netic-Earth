@@ -1,6 +1,6 @@
 export type TrafficKind = 'air' | 'military' | 'maritime';
 export type TrafficTarget = {
-  id: string; kind: TrafficKind; name: string; latitude: number; longitude: number;
+  id: string; kind: TrafficKind; name: string; registration?: string; aircraftType?: string; squawk?: string; verticalRate?: number | null; latitude: number; longitude: number;
   altitude: number | null; altitudeReference: 'geometric' | 'barometric' | 'surface' | 'unknown';
   speed: number | null; heading: number | null; observedAt: number; source: string;
 };
@@ -33,7 +33,7 @@ export function parseAircraft(payload: unknown, now = Date.now()): TrafficTarget
     const flags = number(a.dbFlags) ?? 0;
     const target: TrafficTarget = {
       id: `air:${id}`, kind: (flags & 1) === 1 ? 'military' : 'air',
-      name: text(a.flight) || text(a.r) || id.toUpperCase(), latitude: a.lat as number, longitude: a.lon as number,
+      name: text(a.flight) || text(a.r) || id.toUpperCase(), registration:text(a.r), aircraftType:text(a.t), squawk:text(a.squawk), verticalRate:number(a.geom_rate)??number(a.baro_rate), latitude: a.lat as number, longitude: a.lon as number,
       altitude: ground ? 0 : height === null ? null : height * 0.3048,
       altitudeReference: ground ? 'surface' : geometric !== null ? 'geometric' : barometric !== null ? 'barometric' : 'unknown',
       speed: number(a.gs), heading: heading(a.track), observedAt: epoch - age * 1000, source: 'ADSB.lol',

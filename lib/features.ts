@@ -1,0 +1,9 @@
+import {CALCULATORS} from './calculators';
+export type ToolTab='Explore'|'Routes'|'Traffic'|'Display'|'Calculators';
+const names:[string,ToolTab][]=[
+ ['Country finder','Explore'],['DMS coordinate navigation','Explore'],['Device location','Explore'],['Exact camera sharing','Explore'],['Named saved views','Explore'],['Visit history','Explore'],['Antipode jump','Explore'],['Copy map coordinates','Explore'],['Searchable command palette','Explore'],['Fullscreen workspace','Display'],
+ ['Multi-waypoint route builder','Routes'],['Drawn polygon area','Routes'],['GeoJSON point import','Routes'],['GPX route export','Routes'],['GeoJSON workspace export','Routes'],['Waypoint CSV export','Routes'],['Sampled terrain profile','Routes'],['Map annotations','Routes'],['Range rings','Routes'],['Latitude-longitude graticule','Display'],
+ ['Reverse route direction','Routes'],['Fit route to screen','Routes'],['Multi-stop journey timing','Routes'],['Workspace backup and restore','Explore'],['Selectable traffic roster','Traffic'],['Traffic range and numeric filters','Traffic'],['Traffic sorting','Traffic'],['Aircraft and vessel watchlist','Traffic'],['Traffic CSV export','Traffic'],['Two-report comparison','Traffic'],
+ ['Follow selected traffic','Traffic'],['Observed track trail','Traffic'],['Local proximity alerts','Traffic'],['Traffic statistics','Traffic'],['Pause traffic polling','Traffic'],['Refresh feeds on demand','Traffic'],['Graphics quality presets','Display'],['Day-night illumination','Display'],['Imagery brightness and contrast','Display'],['Atmosphere controls','Display']];
+export const WORKFLOW_FEATURES=names.map(([name,tab],i)=>({id:`tool-${i+1}`,name,tab}));
+export const FEATURES=[...WORKFLOW_FEATURES,...CALCULATORS.map(c=>({id:c.id,name:c.name,tab:'Calculators' as ToolTab}))];

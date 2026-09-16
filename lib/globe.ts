@@ -2,6 +2,8 @@ import type * as Cesium from 'cesium';
 import { approachCoordinates, planTerrainApproach, TERRAIN_VIEW_ANGLE } from './terrain-view';
 import { showCountryLabels } from './country-labels';
 import type { TrafficTarget } from './traffic';
+import { readCamera, writeCamera, type CameraSnapshot } from './session';
+import {destination,distanceKm,bearing,type GeoPoint} from './geo';
 
 type CModule = typeof Cesium;
 declare global { interface Window { Cesium?: CModule; CESIUM_BASE_URL?: string } }
@@ -60,8 +62,11 @@ export class Globe {
   private labels: Cesium.LabelCollection;
   private countryAnchors: { label: Cesium.Label; position: Cesium.Cartesian3; maximumDistance: number }[] = [];
   private traffic: Cesium.CustomDataSource;
+  private workspace: Cesium.CustomDataSource;
   private trafficTargets = new Map<string, TrafficTarget>();
   private selectedTrafficId?: string;
+  private graphicsQuality: 'eco'|'balanced'|'detail' = 'balanced';
+  private lastCameraSave = 0;
   private pin?: Cesium.Entity;
   private handler: Cesium.ScreenSpaceEventHandler;
   private cleanups: (() => void)[] = [];
@@ -90,13 +95,18 @@ export class Globe {
       homeButton: false, sceneModePicker: false, navigationHelpButton: false,
       fullscreenButton: false, selectionIndicator: false, infoBox: false,
       creditContainer, requestRenderMode: true, maximumRenderTimeChange: Infinity,
-      shouldAnimate: false, contextOptions: { webgl: { alpha: false, antialias: true } },
+      showRenderLoopErrors: false, shouldAnimate: false, contextOptions: { webgl: { alpha: false, antialias: true } },
     });
     const v = this.viewer;
     v.scene.backgroundColor = C.Color.fromCssColorString('#050b13');
     v.scene.globe.baseColor = C.Color.fromCssColorString('#173344');
-    v.scene.globe.maximumScreenSpaceError = 0.85;
-    v.scene.globe.tileCacheSize = 240;
+    const mobile = window.matchMedia('(pointer: coarse)').matches || element.clientWidth <= 760;
+    this.graphicsQuality = mobile ? 'eco' : 'balanced';
+    v.scene.globe.maximumScreenSpaceError = mobile ? 2.5 : 1.5;
+    v.scene.globe.tileCacheSize = mobile ? 64 : 128;
+    v.scene.globe.preloadAncestors = false;
+    v.scene.globe.preloadSiblings = false;
+    v.targetFrameRate = mobile ? 30 : 45;
     v.scene.globe.depthTestAgainstTerrain = true;
     v.scene.globe.enableLighting = false;
     v.scene.fog.enabled = true;
@@ -105,7 +115,7 @@ export class Globe {
     v.scene.verticalExaggeration = 1;
     v.scene.highDynamicRange = false;
     v.useBrowserRecommendedResolution = false;
-    v.resolutionScale = Math.min(window.devicePixelRatio || 1, 1.75) / (window.devicePixelRatio || 1);
+    v.resolutionScale = Math.min(window.devicePixelRatio || 1, mobile ? 1 : 1.25) / (window.devicePixelRatio || 1);
     const control = v.scene.screenSpaceCameraController;
     control.minimumZoomDistance = 35; control.maximumZoomDistance = 50000000;
     control.enableCollisionDetection = true;
@@ -114,7 +124,9 @@ export class Globe {
     control.zoomEventTypes = [C.CameraEventType.WHEEL, C.CameraEventType.PINCH];
     v.camera.setView({ destination: C.Cartesian3.fromDegrees(-90, 24, 18000000),
       orientation: { heading: 0, pitch: -C.Math.PI_OVER_TWO, roll: 0 } });
-    v.camera.percentageChanged = 0.02;
+    const saved = readCamera();
+    if (saved) this.restoreCamera(saved);
+    v.camera.percentageChanged = 0.005;
     this.cleanups.push(v.camera.changed.addEventListener(() => this.reportView()));
     this.cleanups.push(v.camera.moveEnd.addEventListener(() => this.reportView(true)));
     this.cleanups.push(v.scene.globe.tileLoadProgressEvent.addEventListener((count: number) => {
@@ -123,26 +135,27 @@ export class Globe {
       if (loading !== this.lastLoading) { this.lastLoading = loading; callbacks.onLoading(loading); }
     }));
     this.cleanups.push(v.scene.renderError.addEventListener((_scene, error) => {
-      callbacks.onNotice('render', '3D rendering paused. Reload the globe to continue.');
+      this.saveCamera();
+      callbacks.onNotice('render', 'Rendering paused. Recover view keeps your location and uses lighter graphics.');
       console.error('Globe render error', error);
     }));
     this.labels = v.scene.primitives.add(new C.LabelCollection({ scene: v.scene }));
     this.traffic = new C.CustomDataSource('transponder-traffic');
     void v.dataSources.add(this.traffic);
+    this.workspace = new C.CustomDataSource('workspace-tools');void v.dataSources.add(this.workspace);
     this.cleanups.push(v.scene.preRender.addEventListener(() => this.updateCountryLabels()));
     const resize = new ResizeObserver(() => {
       if (this.disposed) return;
-      v.resolutionScale = Math.min(window.devicePixelRatio || 1, 1.75) / (window.devicePixelRatio || 1);
+      v.resolutionScale = Math.min(window.devicePixelRatio || 1, this.graphicsQuality === 'eco' ? 1 : this.graphicsQuality === 'detail' ? 1.75 : 1.25) / (window.devicePixelRatio || 1);
       v.resize(); this.render();
     });
     resize.observe(element);
     this.cleanups.push(() => resize.disconnect());
     this.handler = new C.ScreenSpaceEventHandler(v.scene.canvas);
     this.handler.setInputAction((event: {position: Cesium.Cartesian2}) => {
-      const picked = v.scene.pick(event.position);
-      const target = picked?.id instanceof C.Entity ? this.trafficTargets.get(picked.id.id) : undefined;
+      const target = this.pickTraffic(event.position);
       if (target) {
-        this.clearPoint(); this.selectedTrafficId = target.id; this.callbacks.onTraffic(target); return;
+        this.selectTraffic(target.id); return;
       }
       this.clearTrafficSelection();
       const ray = v.camera.getPickRay(event.position);
@@ -167,7 +180,88 @@ export class Globe {
     v.canvas.addEventListener('pointerdown', interrupt);
     v.canvas.addEventListener('wheel', interrupt, { passive: true });
     this.cleanups.push(() => { v.canvas.removeEventListener('pointerdown', interrupt); v.canvas.removeEventListener('wheel', interrupt); });
+    const lost = (event: Event) => { event.preventDefault(); this.saveCamera(); callbacks.onNotice('render', 'Graphics context lost. Recover view restores this location with lighter graphics.'); };
+    const background = () => this.saveCamera();
+    v.canvas.addEventListener('webglcontextlost', lost);
+    document.addEventListener('visibilitychange', background);
+    window.addEventListener('pagehide', background);
+    this.cleanups.push(() => { v.canvas.removeEventListener('webglcontextlost', lost); document.removeEventListener('visibilitychange', background); window.removeEventListener('pagehide', background); });
     this.reportView(true);
+  }
+  setWorkspace(points:GeoPoint[],polygon:boolean,ringKm:number,grid:boolean) {
+    const C=this.C,ds=this.workspace;ds.entities.removeAll();
+    const positions=points.map(p=>C.Cartesian3.fromDegrees(p.longitude,p.latitude));
+    points.forEach((p,i)=>ds.entities.add({position:positions[i],point:{pixelSize:8,color:C.Color.CYAN,heightReference:C.HeightReference.CLAMP_TO_GROUND},label:{text:p.name||String(i+1),font:'13px sans-serif',pixelOffset:new C.Cartesian2(0,-20),heightReference:C.HeightReference.CLAMP_TO_GROUND,fillColor:C.Color.WHITE,style:C.LabelStyle.FILL_AND_OUTLINE,outlineWidth:2}}));
+    if(points.length>1)ds.entities.add({polyline:{positions,clampToGround:true,width:3,material:C.Color.CYAN}});
+    if(polygon&&points.length>2)ds.entities.add({polygon:{hierarchy:positions,material:C.Color.CYAN.withAlpha(0.2),heightReference:C.HeightReference.CLAMP_TO_GROUND}});
+    if(ringKm>0&&points.length)for(const scale of [1,2,3])ds.entities.add({position:positions[0],ellipse:{semiMajorAxis:ringKm*1000*scale,semiMinorAxis:ringKm*1000*scale,material:C.Color.CYAN.withAlpha(0.025),outline:true,outlineColor:C.Color.CYAN.withAlpha(0.7),heightReference:C.HeightReference.CLAMP_TO_GROUND}});
+    if(grid){
+      for(let lat=-80;lat<=80;lat+=10){const coords:number[]=[];for(let lon=-180;lon<=180;lon+=2)coords.push(lon,lat,100);ds.entities.add({polyline:{positions:C.Cartesian3.fromDegreesArrayHeights(coords),width:1,material:C.Color.WHITE.withAlpha(0.25)}});}
+      for(let lon=-180;lon<180;lon+=10){const coords:number[]=[];for(let lat=-90;lat<=90;lat+=2)coords.push(lon,lat,100);ds.entities.add({polyline:{positions:C.Cartesian3.fromDegreesArrayHeights(coords),width:1,material:C.Color.WHITE.withAlpha(0.25)}});}
+    }this.render();
+  }
+  fitPoints(points:GeoPoint[]){if(!points.length)return;const C=this.C;this.viewer.camera.flyToBoundingSphere(C.BoundingSphere.fromPoints(points.map(p=>C.Cartesian3.fromDegrees(p.longitude,p.latitude))),{duration:this.duration(1),offset:new C.HeadingPitchRange(0,-C.Math.PI_OVER_TWO,0)});}
+  async profile(points:GeoPoint[]){
+    if(points.length<2)throw new Error('Add at least two waypoints.');
+    const provider=await this.ensureTerrain(),C=this.C;
+    const lengths=points.slice(1).map((p,i)=>distanceKm(points[i].latitude,points[i].longitude,p.latitude,p.longitude));
+    const total=lengths.reduce((a,b)=>a+b,0);if(total<0.001)throw new Error('Route is too short.');
+    const samples:Cesium.Cartographic[]=[];
+    for(let i=0;i<=128;i++){let distance=total*i/128,segment=0;while(segment<lengths.length-1&&distance>lengths[segment])distance-=lengths[segment++];const a=points[segment],b=points[segment+1],p=destination(a.latitude,a.longitude,bearing(a.latitude,a.longitude,b.latitude,b.longitude),distance);samples.push(C.Cartographic.fromDegrees(p.longitude,p.latitude));}
+    const result=await this.withTimeout(C.sampleTerrain(provider,12,samples),20000);
+    return result.map((p,i)=>({km:total*i/128,height:Number.isFinite(p.height)?p.height:null}));
+  }
+  followTraffic(id:string|null){this.viewer.trackedEntity=id?this.traffic.entities.getById(id):undefined;this.render();}
+  showTrail(points:GeoPoint[]){const C=this.C;this.viewer.entities.removeById('selected-trail');if(points.length>1)this.viewer.entities.add({id:'selected-trail',polyline:{positions:points.map(p=>C.Cartesian3.fromDegrees(p.longitude,p.latitude)),clampToGround:true,width:2,material:C.Color.ORANGE}});this.render();}
+  appearance(options:{lighting:boolean;brightness:number;contrast:number;atmosphere:boolean;fog:boolean;stars:boolean}){
+    const v=this.viewer;v.scene.globe.enableLighting=options.lighting;v.clock.currentTime=this.C.JulianDate.now();
+    v.scene.globe.showGroundAtmosphere=options.atmosphere;if(v.scene.skyAtmosphere)v.scene.skyAtmosphere.show=options.atmosphere;
+    v.scene.fog.enabled=options.fog;if(v.scene.skyBox)v.scene.skyBox.show=options.stars;
+    for(const layer of [this.satellite,this.relief])if(layer){layer.brightness=options.brightness;layer.contrast=options.contrast;}this.render();
+  }
+  cameraSnapshot(): CameraSnapshot {
+    const C=this.C,c=this.viewer.camera,p=c.positionCartographic;
+    return {longitude:C.Math.toDegrees(p.longitude),latitude:C.Math.toDegrees(p.latitude),height:p.height,heading:c.heading,pitch:c.pitch,roll:c.roll};
+  }
+  saveCamera() { if(this.disposed) return; this.lastCameraSave=performance.now(); writeCamera(this.cameraSnapshot()); }
+  restoreCamera(snapshot: CameraSnapshot) {
+    this.viewer.trackedEntity=undefined;
+    this.viewer.camera.lookAtTransform(this.C.Matrix4.IDENTITY);
+    this.viewer.camera.setView({destination:this.C.Cartesian3.fromDegrees(snapshot.longitude,snapshot.latitude,snapshot.height),orientation:{heading:snapshot.heading,pitch:snapshot.pitch,roll:snapshot.roll}});
+    this.render();
+  }
+  setQuality(quality: 'eco'|'balanced'|'detail') {
+    this.graphicsQuality=quality;
+    const v=this.viewer;
+    v.scene.globe.maximumScreenSpaceError=quality==='eco'?2.5:quality==='detail'?0.85:1.5;
+    v.scene.globe.tileCacheSize=quality==='eco'?64:quality==='detail'?160:100;
+    v.targetFrameRate=quality==='eco'?30:quality==='detail'?60:45;
+    v.resolutionScale=Math.min(window.devicePixelRatio||1,quality==='eco'?1:quality==='detail'?1.75:1.25)/(window.devicePixelRatio||1);
+    v.resize();this.render();
+  }
+  selectTraffic(id:string) {
+    const target=this.trafficTargets.get(id); if(!target)return;
+    this.clearPoint();this.selectedTrafficId=id;this.callbacks.onTraffic(target);this.render();
+  }
+  private pickTraffic(pixel: Cesium.Cartesian2) {
+    const C=this.C,v=this.viewer;
+    for(const picked of v.scene.drillPick(pixel,10,44,44)) {
+      const id=typeof picked?.id==='string'?picked.id:picked?.id?.id??picked?.primitive?.id?.id;
+      if(id && this.trafficTargets.has(id))return this.trafficTargets.get(id);
+    }
+    // A screen-space fallback makes small touch targets selectable without relying on GPU picking.
+    let closest:TrafficTarget|undefined,best=28;
+    const ellipsoid=v.scene.globe.ellipsoid,cam=ellipsoid.transformPositionToScaledSpace(v.camera.positionWC,new C.Cartesian3());
+    for(const target of this.trafficTargets.values()) {
+      const ground=C.Cartesian3.fromDegrees(target.longitude,target.latitude);
+      if(C.Cartesian3.dot(cam,ellipsoid.transformPositionToScaledSpace(ground,new C.Cartesian3()))<=1)continue;
+      const position=C.Cartesian3.fromDegrees(target.longitude,target.latitude,Math.max(0,target.altitude??0));
+      if(C.Cartesian3.dot(C.Cartesian3.subtract(position,v.camera.positionWC,new C.Cartesian3()),v.camera.directionWC)<=0)continue;
+      const screen=C.SceneTransforms.worldToWindowCoordinates(v.scene,position);
+      if(!screen)continue;const distance=Math.hypot(screen.x-pixel.x,screen.y-pixel.y);
+      if(distance<best){closest=target;best=distance;}
+    }
+    return closest;
   }
   private duration(seconds: number) { return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : seconds; }
   private render() { if (!this.disposed) this.viewer.scene.requestRender(); }
@@ -268,7 +362,7 @@ export class Globe {
           const shape = target.kind === 'maritime' ? 'M16 3L24 12V26L16 30L8 26V12Z' : 'M16 2L19 12L29 19V22L19 19L18 27L22 29V31L16 29L10 31V29L14 27L13 19L3 22V19L13 12Z';
           const image = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="${shape}" fill="${color}" stroke="#081421" stroke-width="1.5"/></svg>`)}`;
           entity = entities.add({ id: target.id, name: target.name, position, billboard: {
-            image, width: target.kind === 'maritime' ? 18 : 22, height: target.kind === 'maritime' ? 18 : 22,
+            image, width: target.kind === 'maritime' ? 24 : 30, height: target.kind === 'maritime' ? 24 : 30,
             heightReference: target.altitudeReference === 'surface' || target.altitude === null ? C.HeightReference.CLAMP_TO_GROUND : C.HeightReference.NONE,
             disableDepthTestDistance: 0, alignedAxis: north, rotation: C.Math.toRadians(-(target.heading ?? 0)),
             scaleByDistance: new C.NearFarScalar(1000, 1.2, 20000000, 0.7),
@@ -286,7 +380,7 @@ export class Globe {
     } finally { entities.resumeEvents(); }
     if (this.selectedTrafficId) {
       const selected = this.trafficTargets.get(this.selectedTrafficId);
-      if (selected) this.callbacks.onTraffic(selected); else this.clearTrafficSelection();
+      if (selected) this.callbacks.onTraffic(selected); // Keep an opened report available when it leaves the feed.
     }
     this.render();
   }
@@ -357,6 +451,7 @@ export class Globe {
   reportView(force=false) {
     if(this.disposed || (!force && performance.now()-this.lastViewTime<140)) return;
     this.lastViewTime=performance.now();
+    if(force || performance.now()-this.lastCameraSave>1000) this.saveCamera();
     const C=this.C, camera=this.viewer.camera, position=camera.positionCartographic;
     const center=this.center(); const geo=center?C.Cartographic.fromCartesian(center):position;
     this.updateTerrainAppearance();
@@ -504,5 +599,5 @@ export class Globe {
     } catch { if(!this.disposed && id===this.sampleId) this.callbacks.onPoint({latitude:lat,longitude:lng,height:null,pending:false}); }
   }
   clearPoint() { this.selectedPoint=undefined; ++this.sampleId; if(this.pin) {this.viewer.entities.remove(this.pin);this.pin=undefined;} this.callbacks.onPoint(null);this.render(); }
-  destroy() { ++this.navigationId; this.disposed=true;++this.sampleId;this.cleanups.forEach(fn=>fn());this.handler.destroy();if(!this.viewer.isDestroyed()) this.viewer.destroy(); }
+  destroy() { this.saveCamera(); ++this.navigationId; this.disposed=true;++this.sampleId;this.cleanups.forEach(fn=>fn());this.handler.destroy();if(!this.viewer.isDestroyed()) this.viewer.destroy(); }
 }

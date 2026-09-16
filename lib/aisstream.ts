@@ -25,7 +25,7 @@ export async function readAISStream(key: string, latitude: number, longitude: nu
       socket.close();
       if (error) reject(error); else resolve([...targets.values()].slice(0, 1500));
     };
-    const timeout = setTimeout(() => finish(subscribed ? undefined : new Error('AIS connection timed out')), 12_000);
+    const timeout = setTimeout(() => finish(subscribed ? undefined : new Error('AIS connection timed out')), 4_000);
     socket.addEventListener('open', () => {
       subscribed = true;
       socket.send(JSON.stringify({ APIKey: key, BoundingBoxes: aisBoundingBoxes(latitude, longitude),
