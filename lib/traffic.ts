@@ -23,9 +23,13 @@ const coordinates = (lat: unknown, lon: unknown) => number(lat) !== null && numb
 export const isFreshTarget = (t: TrafficTarget, now = Date.now()) => now - t.observedAt <= (t.kind === 'maritime' ? SHIP_MAX_AGE : AIR_MAX_AGE) && t.observedAt <= now + 10_000;
 
 export function vesselClassFromType(type:number|null|undefined):VesselClass{
- if(type===35)return'military'; if(type===36)return'sailing'; if(type===31||type===32||type===52)return'tug';
- if(type===60)return'passenger'; if(type===70)return'cargo'; if(type===80)return'tanker';
- if(type!==null&&type!==undefined&&((type>=50&&type<=59)||type===33||type===34||type===37||type===40||type===90))return'service';
+ if(type===35)return'military';
+ if(type===36)return'sailing';
+ if(type===31||type===32||type===52)return'tug';
+ if(type!==null&&type!==undefined&&type>=60&&type<=69)return'passenger';
+ if(type!==null&&type!==undefined&&type>=70&&type<=79)return'cargo';
+ if(type!==null&&type!==undefined&&type>=80&&type<=89)return'tanker';
+ if(type!==null&&type!==undefined&&((type>=50&&type<=59)||type===33||type===34||type===37||(type>=40&&type<=49)||(type>=90&&type<=99)))return'service';
  return'generic';
 }
 
@@ -91,7 +95,8 @@ export function parseVesselMetadata(payload:unknown):Map<string,VesselMetadata>{
  for(const item of metadataRecords(payload)){
   const mmsi=String(item.mmsi??item.MMSI??'');if(!/^\d{9}$/.test(mmsi))continue;
   const refA=numeric(item.refA),refB=numeric(item.refB),refC=numeric(item.refC),refD=numeric(item.refD),type=numeric(item.type);
-  result.set(mmsi,{mmsi,name:text(item.name),type,callSign:text(item.callSign),imo:numeric(item.imo),destination:text(item.destination),lengthMeters:refA!==null&&refB!==null?refA+refB:null,beamMeters:refC!==null&&refD!==null?refC+refD:null});
+  const length=refA!==null&&refB!==null?refA+refB:null,beam=refC!==null&&refD!==null?refC+refD:null;
+  result.set(mmsi,{mmsi,name:text(item.name),type,callSign:text(item.callSign),imo:numeric(item.imo),destination:text(item.destination),lengthMeters:length!==null&&length>0?length:null,beamMeters:beam!==null&&beam>0?beam:null});
  }
  return result;
 }
