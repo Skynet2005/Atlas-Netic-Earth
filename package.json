@@ -1,13 +1,12 @@
 {
   "name": "atlas-netic",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
-  "engines": {
-    "node": ">=22.13.0"
-  },
+  "engines": {"node": ">=22.13.0"},
   "scripts": {
-    "dev": "node scripts/prepare-globe.mjs && next dev",
-    "build": "node scripts/prepare-globe.mjs && next build --webpack",
+    "models": "node scripts/build-traffic-models.mjs",
+    "dev": "pnpm models && node scripts/prepare-globe.mjs && next dev",
+    "build": "pnpm models && node scripts/prepare-globe.mjs && next build --webpack",
     "start": "next start",
     "lint": "eslint . --ignore-pattern .next",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
@@ -62,10 +61,6 @@
     "wrangler": "4.92.0"
   },
   "type": "module",
-  "overrides": {
-    "miniflare": {
-      "sharp": "0.35.4"
-    }
-  },
+  "overrides": {"miniflare": {"sharp": "0.35.4"}},
   "packageManager": "pnpm@11.25.0"
 }
