@@ -20,7 +20,7 @@ import styles from './atlas-v2.module.css';
 const ToolsDrawer = dynamic(() => import('@/components/tools-drawer'), { ssr: false });
 type PanelTab = 'map' | 'traffic' | 'intel';
 
-function useDiagnostics(getGlobe: () => Globe | null, objects: number) {
+function useDiagnostics(objects: number) {
   const [value, setValue] = useState({ fps: 0, objects, heapMb: null as number | null });
   useEffect(() => {
     let frames = 0, last = performance.now(), raf = 0, active = true;
@@ -35,7 +35,7 @@ function useDiagnostics(getGlobe: () => Globe | null, objects: number) {
     };
     raf = requestAnimationFrame(frame);
     return () => { active = false; cancelAnimationFrame(raf); };
-  }, [getGlobe, objects]);
+  }, [objects]);
   return value;
 }
 
@@ -53,9 +53,10 @@ export default function AtlasV2() {
   const getGlobe = useCallback(() => globeRef.current, []);
   const notice = useCallback((key: string, message: string | null) => setNotices(previous => { const next = { ...previous }; if (message) next[key] = message; else delete next[key]; return next; }), []);
   const trafficFeeds = useTraffic(trafficLayers, ready, view.latitude, view.longitude, trafficPaused);
-  const trafficTargets = useMemo(() => [...trafficFeeds.air.targets, ...trafficFeeds.maritime.targets].filter(target => trafficLayers[target.kind]), [trafficFeeds.air.targets, trafficFeeds.maritime.targets, trafficLayers]);
+  const replayTimestamp = replayMinutes > 0 ? Date.now() - replayMinutes * 60_000 : null;
+  const trafficTargets = useMemo(() => (replayTimestamp === null ? [...trafficFeeds.air.targets, ...trafficFeeds.maritime.targets] : trafficFeeds.at(replayTimestamp)).filter(target => trafficLayers[target.kind]), [trafficFeeds.air.targets, trafficFeeds.maritime.targets, trafficFeeds, replayTimestamp, trafficLayers]);
   const intelligence = useIntelligence(intelLayers, ready, view.latitude, view.longitude, satelliteGroup, replayMinutes);
-  const diagnostics = useDiagnostics(getGlobe, intelligence.allSignals.length);
+  const diagnostics = useDiagnostics(intelligence.allSignals.length + trafficTargets.length);
 
   useEffect(() => {
     let cancelled = false, engine: Globe | undefined, renderer: IntelligenceRenderer | undefined;
@@ -63,9 +64,9 @@ export default function AtlasV2() {
       try {
         const C = await loadCesium();
         if (cancelled || !canvasRef.current || !creditRef.current) return;
-        engine = new Globe(C, canvasRef.current, creditRef.current, { onView: setView, onPoint: setPoint, onTerrain: setTerrainReady, onNavigating: () => {}, onLoading: setLoading, onNotice: notice, onTraffic: setSelectedTraffic });
+        engine = new Globe(C, canvasRef.current, creditRef.current, { onView: setView, onPoint: setPoint, onTerrain: setTerrainReady, onNavigating: () => {}, onLoading: setLoading, onNotice: notice, onTraffic: target => { setSelectedTraffic(target); if (target) setSelectedSignal(null); } });
         globeRef.current = engine;
-        renderer = new IntelligenceRenderer(C, engine.viewer, signal => setSelectedSignal(signal));
+        renderer = new IntelligenceRenderer(C, engine.viewer, signal => { setSelectedSignal(signal); if (signal) { setSelectedTraffic(null); engine?.clearTrafficSelection(); } });
         intelligenceRenderer.current = renderer;
         if (retry > 0) engine.setQuality('eco');
         setReady(true);
@@ -110,6 +111,7 @@ export default function AtlasV2() {
   };
 
   const feedMap: Record<IntelligenceKind, typeof intelligence.earthquakes> = { earthquakes: intelligence.earthquakes, fires: intelligence.fires, weather: intelligence.weather, satellites: intelligence.satellites };
+  const trafficHealth = { air: { phase: trafficFeeds.air.phase, message: trafficFeeds.air.message, updatedAt: trafficFeeds.air.updatedAt, count: trafficFeeds.air.targets.length, cache: trafficFeeds.air.cache }, maritime: { phase: trafficFeeds.maritime.phase, message: trafficFeeds.maritime.message, updatedAt: trafficFeeds.maritime.updatedAt, count: trafficFeeds.maritime.targets.length, cache: trafficFeeds.maritime.cache } };
   const status = fatal ? 'Globe unavailable' : !ready ? 'Starting globe…' : !terrain ? 'Terrain off' : !terrainReady ? 'Loading elevation…' : loading ? 'Refining map detail…' : replayMinutes ? `Replay · ${replayMinutes}m ago` : 'Live Earth';
 
   if (fatal) return <main className={styles.error}><div><Globe2 size={38}/><h1>Atlas-Netic could not start</h1><p>{fatal}</p><button onClick={() => { setFatal(''); setRetry(value => value + 1); }}>Recover with lighter graphics</button></div></main>;
@@ -124,11 +126,11 @@ export default function AtlasV2() {
     {panelOpen && <aside className={styles.panel} aria-label="Atlas controls"><div className={styles.tabBar}><button data-active={panelTab==='map'} onClick={() => setPanelTab('map')}><Layers3 size={14}/>Map</button><button data-active={panelTab==='traffic'} onClick={() => setPanelTab('traffic')}><Activity size={14}/>Traffic</button><button data-active={panelTab==='intel'} onClick={() => setPanelTab('intel')}><Database size={14}/>Intel</button></div><div className={styles.panelBody}>
       {panelTab === 'map' && <div className={styles.mapSection}><h3>MAP & DISPLAY</h3><div className={styles.controlRow}><label>Surface</label><select value={surface} onChange={event => setSurface(event.target.value as Surface)}><option value="satellite">Satellite</option><option value="relief">Relief</option></select></div><div className={styles.controlRow}><label>3D terrain</label><Switch checked={terrain} onCheckedChange={setTerrain}/></div><div className={styles.controlRow}><label>Terrain shading</label><Switch checked={shading} onCheckedChange={setShading}/></div><div className={styles.controlRow}><label>Country borders</label><Switch checked={borders} onCheckedChange={setBorders}/></div><div className={styles.controlRow}><label>Country labels</label><Switch checked={labels} onCheckedChange={setLabels}/></div><div className={styles.sliderBlock}><div className={styles.rowBetween}><span>Height scale</span><strong>{exaggeration.toFixed(1)}×</strong></div><input type="range" min="1" max="6" step="0.5" value={exaggeration} onChange={event => setExaggeration(Number(event.target.value))}/></div><div className={styles.controlRow}><label>Altitude units</label><AltitudeUnits/></div></div>}
       {panelTab === 'traffic' && <div className={styles.trafficWrap}><TrafficPanel layers={trafficLayers} onChange={setTrafficLayers} feeds={trafficFeeds} onBaltic={() => globeRef.current?.overview(24.8, 59.7, 1_100_000)}/></div>}
-      {panelTab === 'intel' && <IntelligencePanel layers={intelLayers} onChange={setIntelLayers} feeds={feedMap} satelliteGroup={satelliteGroup} onSatelliteGroup={setSatelliteGroup} replayMinutes={replayMinutes} onReplay={setReplayMinutes} diagnostics={diagnostics}/>} 
+      {panelTab === 'intel' && <IntelligencePanel layers={intelLayers} onChange={setIntelLayers} feeds={feedMap} satelliteGroup={satelliteGroup} onSatelliteGroup={setSatelliteGroup} replayMinutes={replayMinutes} onReplay={setReplayMinutes} diagnostics={diagnostics} trafficHealth={trafficHealth}/>} 
     </div></aside>}
     <div className={styles.status}><span className={replayMinutes ? undefined : styles.liveDot}/><span>{status}</span><span>·</span><span>{view.latitude.toFixed(2)}°, {view.longitude.toFixed(2)}°</span><span>·</span><span>{formatAltitude(view.altitude, unit)}</span>{Object.values(notices).length>0 && <><span>·</span><span>{Object.values(notices)[0]}</span></>}</div>
     {selectedSignal && <aside className={styles.selectionCard}><header><div><h3>{selectedSignal.name}</h3><p>{selectedSignal.kind} · {selectedSignal.source} · {selectedSignal.quality}</p></div><button aria-label="Close intelligence detail" onClick={() => { setSelectedSignal(null); intelligenceRenderer.current?.clearSelection(); }}><X size={18}/></button></header><dl className={styles.selectionGrid}><div><dt>Position</dt><dd>{selectedSignal.latitude.toFixed(4)}, {selectedSignal.longitude.toFixed(4)}</dd></div><div><dt>Altitude</dt><dd>{selectedSignal.altitude === null ? 'Not reported' : formatAltitude(selectedSignal.altitude, unit)}</dd></div><div><dt>Observed</dt><dd>{new Date(selectedSignal.observedAt).toLocaleString()}</dd></div><div><dt>Severity</dt><dd>{selectedSignal.severity}</dd></div>{Object.entries(selectedSignal.details).filter(([,value]) => value !== null && value !== '' && !String(value).startsWith('1 ') && !String(value).startsWith('2 ')).slice(0,8).map(([key,value]) => <div key={key}><dt>{key}</dt><dd>{String(value)}</dd></div>)}</dl>{selectedSignal.sourceUrl && <a className={styles.sourceLink} href={selectedSignal.sourceUrl} target="_blank" rel="noreferrer">Open source record ↗</a>}</aside>}
-    {!selectedSignal && selectedTraffic && <aside className={styles.selectionCard}><header><div><h3>{selectedTraffic.name}</h3><p>{selectedTraffic.kind} · {selectedTraffic.source}</p></div><button aria-label="Close traffic detail" onClick={() => { setSelectedTraffic(null); globeRef.current?.clearTrafficSelection(); }}><X size={18}/></button></header><dl className={styles.selectionGrid}><div><dt>Position</dt><dd>{selectedTraffic.latitude.toFixed(4)}, {selectedTraffic.longitude.toFixed(4)}</dd></div><div><dt>Altitude</dt><dd>{selectedTraffic.altitude === null ? 'Unknown' : formatAltitude(selectedTraffic.altitude, unit)}</dd></div><div><dt>Speed</dt><dd>{selectedTraffic.speed === null ? 'Unknown' : `${selectedTraffic.speed.toFixed(0)} kt`}</dd></div><div><dt>Heading</dt><dd>{selectedTraffic.heading === null ? 'Unknown' : `${selectedTraffic.heading.toFixed(0)}°`}</dd></div></dl></aside>}
+    {!selectedSignal && selectedTraffic && <aside className={styles.selectionCard}><header><div><h3>{selectedTraffic.name}</h3><p>{selectedTraffic.kind} · {selectedTraffic.source}</p></div><button aria-label="Close traffic detail" onClick={() => { setSelectedTraffic(null); globeRef.current?.clearTrafficSelection(); }}><X size={18}/></button></header><dl className={styles.selectionGrid}><div><dt>Position</dt><dd>{selectedTraffic.latitude.toFixed(4)}, {selectedTraffic.longitude.toFixed(4)}</dd></div><div><dt>Altitude</dt><dd>{selectedTraffic.altitude === null ? 'Unknown' : formatAltitude(selectedTraffic.altitude, unit)}</dd></div><div><dt>Speed</dt><dd>{selectedTraffic.speed === null ? 'Unknown' : `${selectedTraffic.speed.toFixed(0)} kt`}</dd></div><div><dt>Heading</dt><dd>{selectedTraffic.heading === null ? 'Unknown' : `${selectedTraffic.heading.toFixed(0)}°`}</dd></div><div><dt>Stored observations</dt><dd>{trafficFeeds.historyFor(selectedTraffic.id).length}</dd></div></dl></aside>}
     {shareMessage && <div className={styles.shareMessage}>{shareMessage}</div>}
     <ToolsDrawer open={toolsOpen} onClose={() => setToolsOpen(false)} getGlobe={getGlobe} ready={ready} view={view} point={point} feeds={trafficFeeds} selected={selectedTraffic} onSelect={target => { setSelectedSignal(null); setSelectedTraffic(target); globeRef.current?.selectTraffic(target.id); }} paused={trafficPaused} onPaused={setTrafficPaused}/>
   </main>;
