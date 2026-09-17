@@ -14,7 +14,7 @@ type SatelliteApi = {
 declare global { interface Window { satellite?: SatelliteApi } }
 
 let enginePromise: Promise<SatelliteApi> | undefined;
-const records = new Map<string, SatRec>();
+const satrecs = new Map<string, SatRec>();
 
 export function loadSatelliteEngine() {
   if (typeof window === 'undefined') return Promise.reject(new Error('Satellite propagation is browser-only.'));
@@ -39,28 +39,37 @@ export function loadSatelliteEngine() {
   return enginePromise;
 }
 
-export async function propagateSatellites(catalog: SatelliteRecord[], at: Date): Promise<IntelligenceSignal[]> {
+function recordSatrec(record: SatelliteRecord, satellite: SatelliteApi) {
+  const key = `${record.line1}\n${record.line2}`;
+  let satrec = satrecs.get(key);
+  if (!satrec) { satrec = satellite.twoline2satrec(record.line1, record.line2); satrecs.set(key, satrec); }
+  return satrec;
+}
+
+export async function propagateSatellite(record: SatelliteRecord, at: Date): Promise<IntelligenceSignal | null> {
   const satellite = await loadSatelliteEngine();
-  const observedAt = at.getTime();
-  const signals: IntelligenceSignal[] = [];
-  for (const record of catalog) {
-    try {
-      const cacheKey = `${record.line1}\n${record.line2}`;
-      let satrec = records.get(cacheKey);
-      if (!satrec) { satrec = satellite.twoline2satrec(record.line1, record.line2); records.set(cacheKey, satrec); }
-      const state = satellite.propagate(satrec, at);
-      if (!state.position || typeof state.position === 'boolean') continue;
-      const geodetic = satellite.eciToGeodetic(state.position, satellite.gstime(at));
-      const latitude = satellite.degreesLat(geodetic.latitude), longitude = satellite.degreesLong(geodetic.longitude);
-      const altitude = geodetic.height * 1000;
-      if (![latitude, longitude, altitude].every(Number.isFinite) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180 || altitude < -1000) continue;
-      signals.push({
-        id: `sat:${record.id}`, kind: 'satellites', name: record.name, latitude, longitude, altitude,
-        observedAt, expiresAt: observedAt + 6 * 60 * 60 * 1000, source: record.source, sourceUrl: record.sourceUrl,
-        severity: 'info', quality: 'derived',
-        details: { noradId: record.id, group: record.group, propagation: 'SGP4/SDP4 via satellite.js 6.0.1', tleLine1: record.line1, tleLine2: record.line2 },
-      });
-    } catch { /* malformed/decayed objects are omitted rather than invented */ }
+  try {
+    const state = satellite.propagate(recordSatrec(record, satellite), at);
+    if (!state.position || typeof state.position === 'boolean') return null;
+    const geodetic = satellite.eciToGeodetic(state.position, satellite.gstime(at));
+    const latitude = satellite.degreesLat(geodetic.latitude), longitude = satellite.degreesLong(geodetic.longitude), altitude = geodetic.height * 1000;
+    if (![latitude, longitude, altitude].every(Number.isFinite) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180 || altitude < -1000) return null;
+    const observedAt = at.getTime();
+    return { id: `sat:${record.id}`, kind: 'satellites', name: record.name, latitude, longitude, altitude, observedAt, expiresAt: observedAt + 6 * 60 * 60 * 1000, source: record.source, sourceUrl: record.sourceUrl, severity: 'info', quality: 'derived', details: { noradId: record.id, group: record.group, propagation: 'SGP4/SDP4 via satellite.js 6.0.1', tleLine1: record.line1, tleLine2: record.line2 } };
+  } catch { return null; }
+}
+
+export async function propagateSatellites(catalog: SatelliteRecord[], at: Date): Promise<IntelligenceSignal[]> {
+  const results = await Promise.all(catalog.map(record => propagateSatellite(record, at)));
+  return results.filter((signal): signal is IntelligenceSignal => Boolean(signal));
+}
+
+export async function satelliteOrbitPath(record: SatelliteRecord, around: Date, minutes = 100, stepMinutes = 2) {
+  const points: { latitude: number; longitude: number; altitude: number }[] = [];
+  const half = Math.floor(minutes / 2);
+  for (let offset = -half; offset <= half; offset += stepMinutes) {
+    const signal = await propagateSatellite(record, new Date(around.getTime() + offset * 60_000));
+    if (signal && signal.altitude !== null) points.push({ latitude: signal.latitude, longitude: signal.longitude, altitude: signal.altitude });
   }
-  return signals;
+  return points;
 }
