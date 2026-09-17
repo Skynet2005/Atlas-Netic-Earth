@@ -1,55 +1,80 @@
 # Atlas-Netic
 
-Interactive 3D globe with Esri measured terrain, satellite imagery, country borders, and close terrain views.
+Atlas-Netic is a real-time 3D Earth intelligence workspace built with Next.js, TypeScript and Cesium. Its design rule is simple: visible information should preserve its source, timestamp and uncertainty instead of inventing missing state.
+
+## What it does
+
+- Real measured terrain and satellite/relief imagery with recoverable camera state.
+- Persistent 3D public transponder traffic for aircraft and vessels.
+- Public-provider military aircraft classification when the upstream feed marks it; it is not an inventory of military activity.
+- USGS earthquake events.
+- NASA wildfire intelligence: FIRMS VIIRS thermal detections when `FIRMS_MAP_KEY` is configured, otherwise NASA EONET wildfire-event fallback.
+- NOAA/NWS active weather alerts for the map center.
+- CelesTrak orbital elements propagated in-browser with SGP4/SDP4 for stations, GPS, weather, science, GEO and Starlink catalogs.
+- Selected satellite orbit paths.
+- Source-health states, stale-data preservation, request coalescing, retries and server-side stale caches.
+- A 24-hour event/orbit replay control. Traffic history is retained from observations collected during the active browser session.
+- Exact scene sharing: camera, map state, traffic layers, intelligence layers, catalog and replay position are encoded into a link.
+- The existing 100-tool workspace remains available for routes, terrain profiles, traffic workflows and engineering/geospatial calculators.
+
+## Data integrity principles
+
+Atlas-Netic does not simulate missing traffic or silently convert unknown measurements into known values. Coverage gaps, stale data, fallbacks and derived positions are exposed in the UI. A zero count is not proof that an area is empty.
+
+Satellite positions are derived from provider orbital elements. Fire, earthquake, weather, aircraft and vessel locations remain provider observations unless explicitly labelled otherwise.
 
 ## Development
 
 Requires Node.js 22.13+ and pnpm 11.25.0.
 
 ```sh
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-## Vercel
-
-Import this repository into Vercel using the Next.js framework preset. No environment variables or API keys are required. The build copies Cesium assets to public/cesium before compiling Next.js.
+Full verification:
 
 ```sh
-pnpm build
-pnpm test
+pnpm verify
 ```
 
-Elevation uses Esri World Elevation Terrain 3D. Source resolution and accuracy vary by location. Height scale defaults to true scale (1×); optional exaggeration changes display only. Terrain 3D focuses near the measured ground to reveal real relief.
+That runs lint, unit/contract tests, static performance budgets and the production build.
 
-Satellite imagery and relief are provided by Esri; borders and labels are from Natural Earth. Required Cesium notices ship with the generated assets.
+## Optional environment variables
 
-## Transponder layers
+Copy `.env.example` to `.env.local` for local use. Never commit real keys.
 
-- Air and publicly identified military aircraft: ADSB.lol open API (ODbL 1.0), within 250 nautical miles of the view center. Refreshed every 15 seconds; position reports expire at 90 seconds. Military classification is a provider flag, not a complete inventory.
-- Maritime default: Fintraffic / Digitraffic AIS (CC BY 4.0), Finnish waters and nearby Baltic reception. Refreshed every 45 seconds; position reports expire at 15 minutes.
-- Optional wider maritime coverage: add `AISSTREAM_API_KEY` as a secret Vercel environment variable and redeploy. The server collects a bounded, partial 4-second live sample near the view center. The browser never receives the key. No key is needed for the included regional feed.
+```text
+AISSTREAM_API_KEY=   # optional wider maritime reception
+FIRMS_MAP_KEY=       # optional NASA FIRMS VIIRS thermal detections
+```
 
-AISStream allows only three subscribed connections per account. Requests are coalesced and cached within a function instance. For multi-user/high-volume global use, replace the short collector with a persistent shared AIS service; serverless instances cannot share the connection limit.
+Without either key the application still starts. Maritime uses the included Fintraffic/Digitraffic regional feed and fire intelligence falls back to NASA EONET.
 
-No simulated traffic is shown. Receivers and transponders have incomplete coverage; a zero count is not proof of empty airspace or sea. Geometric aircraft altitudes are preferred; barometric fallback is labeled. Missing altitude is shown on the surface and marked unknown.
+## Architecture
 
-Country names use fixed geodetic anchors, horizon/viewport culling, overlap suppression, and automatically hide for close terrain views (below 250 km on mobile, 180 km on desktop).
+See [ARCHITECTURE.md](ARCHITECTURE.md). Provider and licensing details are in [DATA_SOURCES.md](DATA_SOURCES.md). Performance expectations and measurement are in [PERFORMANCE.md](PERFORMANCE.md).
 
-## Recovery and utility workspace
+The intended layer boundary is:
 
-Camera location and orientation are saved during navigation and restored after recovery or reload. Phones default to reduced pixel and tile-memory budgets. Recovery uses Eco graphics. Touch picking uses a larger hit area; the searchable traffic roster offers another way to select reports. Open report details remain available if the report leaves the current feed.
+```text
+provider -> validate/normalize -> resilient server cache -> client feed -> layer renderer -> Cesium
+```
 
-Traffic polling starts independently of terrain initialization, uses 15-second aircraft and 45-second vessel refresh intervals, and does not abort on every camera movement. Fresh reports remain visible during temporary failures; expired reports are removed. Optional AISStream collection now waits up to 4 seconds for its first sample. Coverage and upstream availability still affect loading.
+New intelligence layers should own their provider adapter, normalized record contract, state/health and renderer instead of adding provider logic directly to the globe shell.
 
-The lazy-loaded **Tools** workspace includes [100 additional tools](FEATURES.md): 40 map/traffic workflows and 60 calculators. No simulated traffic is displayed.
+## Vercel
 
-## Altitude units and 3D traffic
+Use the Next.js framework preset. `scripts/prepare-globe.mjs` copies the required Cesium runtime assets before compilation. Add optional provider keys as encrypted environment variables on the server; they are never sent to the browser.
 
-Altitude defaults to thousands of feet (`kft`); 35 kft means 35,000 feet. Change **Altitude units** in Data & controls or Tools → Display. The browser remembers the setting. Camera altitude, inspected elevation, report cards, comparison cards, traffic altitude filters/CSV, and terrain profiles follow it. Internal coordinates and the explicitly labelled engineering calculator inputs remain in their stated units.
+## Accuracy and coverage
 
-All loaded transponder reports use persistent 3D aircraft or vessel silhouettes at every camera distance. There is no billboard fallback, camera-distance cutoff, or nearest-model quota. Two shared, locally hosted low-poly meshes are reused (348 aircraft vertices / 396 vessel vertices), with animations, textures and shadows disabled. Cesium handles visibility culling; panning does not destroy or recreate models. Models have a 22-pixel minimum visibility target, so apparent dimensions are illustrative rather than measured. Position is the latest received longitude/latitude/height, never extrapolated or vertically exaggerated. Direction prefers reported true heading, with course over ground as a labelled fallback; pitch/roll are level because attitude is not supplied. Aircraft geometric altitude is preferred; uncorrected barometric altitude is a labelled fallback. Surface reports clamp to the terrain/sea surface. Gray models indicate unknown height or direction, using the surface and north as display placeholders, not measured values. This does not correct upstream errors, report latency, pressure or geoid differences. Generic silhouettes do not claim an exact airframe or ship class.
+Terrain source resolution and vertical accuracy vary by location. Public ADS-B, MLAT and AIS reception is incomplete. Military classification is upstream metadata, not comprehensive identification. NWS alert coverage is U.S.-focused. Satellite propagation accuracy depends on orbital-element age. EONET describes wildfire events rather than individual thermal pixels; FIRMS provides the thermal-detection layer when configured.
 
-Regenerate the original low-poly assets with `node scripts/build-traffic-models.mjs`. Their glTF Z-forward/Y-up axes and cardinal orientation are regression-tested.
+## Security and contributions
 
-Regional feed snapshots merge by transponder ID and newest report timestamp. Fresh reports remain loaded when the camera crosses query regions. Aircraft expire after 90 seconds and ships after 15 minutes; switching a layer off removes its models.
+See [SECURITY.md](SECURITY.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+Atlas-Netic source code is MIT-licensed. Third-party datasets, APIs, imagery, terrain, notices and assets retain their own terms; see [DATA_SOURCES.md](DATA_SOURCES.md).
