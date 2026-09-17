@@ -186,9 +186,11 @@ export class IntelligenceRenderer {
     const cameraHeight = viewer.camera.positionCartographic.height;
     const baseCell = cameraHeight > 8_000_000 ? 44 : cameraHeight > 2_000_000 ? 34 : cameraHeight > 500_000 ? 26 : 18;
     const maxVisible = cameraHeight > 8_000_000 ? 420 : cameraHeight > 2_000_000 ? 760 : 1_500;
-    const occluder = new C.EllipsoidalOccluder(viewer.scene.globe.ellipsoid, viewer.camera.positionWC);
+    const ellipsoid = viewer.scene.globe.ellipsoid;
+    const scaledCamera = ellipsoid.transformPositionToScaledSpace(viewer.camera.positionWC, new C.Cartesian3());
     const now = viewer.clock.currentTime;
     const towardCamera = new C.Cartesian3();
+    const scaledPoint = new C.Cartesian3();
     const candidates: { signal: IntelligenceSignal; entity: Cesium.Entity; x: number; y: number }[] = [];
 
     for (const signal of this.signals.values()) {
@@ -197,8 +199,8 @@ export class IntelligenceRenderer {
       if (!entity || !position) continue;
       C.Cartesian3.subtract(position, viewer.camera.positionWC, towardCamera);
       const facingCamera = C.Cartesian3.dot(towardCamera, viewer.camera.directionWC) > 0;
-      const visibleFromCamera = facingCamera && occluder.isPointVisible(position);
-      if (!visibleFromCamera || C.Cartesian3.distance(viewer.camera.positionWC, position) > distanceLimit(signal)) {
+      const aboveHorizon = signal.kind === 'satellites' || C.Cartesian3.dot(scaledCamera, ellipsoid.transformPositionToScaledSpace(position, scaledPoint)) > 1.001;
+      if (!facingCamera || !aboveHorizon || C.Cartesian3.distance(viewer.camera.positionWC, position) > distanceLimit(signal)) {
         entity.show = false;
         continue;
       }
