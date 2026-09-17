@@ -9,8 +9,8 @@ const css = readFileSync(new URL('../components/atlas-v2.module.css', import.met
 test('intelligence markers respect globe depth and horizon occlusion', () => {
   assert.doesNotMatch(renderer, /disableDepthTestDistance:\s*Number\.POSITIVE_INFINITY/);
   assert.match(renderer, /disableDepthTestDistance:\s*0/);
-  assert.match(renderer, /EllipsoidalOccluder/);
-  assert.match(renderer, /isPointVisible/);
+  assert.match(renderer, /transformPositionToScaledSpace/);
+  assert.match(renderer, /aboveHorizon/);
 });
 
 test('dense intelligence layers use distance scaling and screen-space decluttering', () => {
