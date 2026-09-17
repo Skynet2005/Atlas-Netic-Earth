@@ -1,6 +1,6 @@
 {
   "name": "atlas-netic",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -10,7 +10,9 @@
     "build": "node scripts/prepare-globe.mjs && next build --webpack",
     "start": "next start",
     "lint": "eslint . --ignore-pattern .next",
-    "test": "node --experimental-strip-types --test tests/*.test.mjs"
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "perf": "node scripts/perf-budget.mjs",
+    "verify": "pnpm lint && pnpm test && pnpm perf && pnpm build"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

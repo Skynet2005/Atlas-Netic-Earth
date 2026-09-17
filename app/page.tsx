@@ -1,3 +1,3 @@
-import EarthExplorer from "@/components/earth-explorer";
+import AtlasV2 from '@/components/atlas-v2';
 
-export default function Home() { return <EarthExplorer />; }
+export default function Home() { return <AtlasV2 />; }
