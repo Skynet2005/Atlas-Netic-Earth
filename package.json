@@ -2,7 +2,7 @@
   "name": "atlas-netic",
   "version": "0.2.1",
   "private": true,
-  "engines": {"node": ">=22.13.0"},
+  "engines": {"node": "22.x"},
   "scripts": {
     "models": "node scripts/build-traffic-models.mjs",
     "dev": "pnpm models && node scripts/prepare-globe.mjs && next dev",
