@@ -2,19 +2,22 @@ import { cachedSource, fetchProvider } from '@/lib/data/source-runtime';
 import { centroidOfCoordinates, parseViewQuery, severityFromWeather, timeOr } from '@/lib/intelligence/parsers';
 import type { IntelligenceSignal } from '@/lib/intelligence/types';
 
+const record=(value:unknown):Record<string,unknown>=>value!==null&&typeof value==='object'?value as Record<string,unknown>:{};
+
 function parseAlerts(raw: unknown, center: { latitude: number; longitude: number }, now: number): IntelligenceSignal[] {
-  const features = (raw as { features?: unknown[] })?.features;
+  const features = record(raw).features;
   if (!Array.isArray(features)) throw new Error('NWS response did not contain features.');
-  return features.flatMap((feature: any) => {
-    const props = feature?.properties || {};
-    const centroid = centroidOfCoordinates(feature?.geometry?.coordinates) || center;
+  return features.flatMap(item => {
+    const feature=record(item),props=record(feature.properties),geometry=record(feature.geometry);
+    const centroid = centroidOfCoordinates(geometry.coordinates) || center;
     const observedAt = timeOr(props.effective || props.sent || props.onset, now);
     const expiresAt = timeOr(props.ends || props.expires, observedAt + 6 * 60 * 60 * 1000);
-    const id = String(feature?.id || props.id || `${props.event}:${centroid.latitude}:${centroid.longitude}`);
+    const id = String(feature.id || props.id || `${props.event}:${centroid.latitude}:${centroid.longitude}`);
+    const sourceUrl=typeof feature.id==='string'?feature.id:'https://api.weather.gov/alerts';
     return [{
       id: `weather:${id}`, kind: 'weather' as const, name: String(props.event || props.headline || 'Weather alert'),
       latitude: centroid.latitude, longitude: centroid.longitude, altitude: 0, observedAt, expiresAt,
-      source: 'NWS', sourceUrl: String(feature?.id || 'https://api.weather.gov/alerts'), severity: severityFromWeather(props.severity), quality: 'reported' as const,
+      source: 'NWS', sourceUrl, severity: severityFromWeather(props.severity), quality: 'reported' as const,
       details: { headline: String(props.headline || ''), area: String(props.areaDesc || ''), severity: String(props.severity || ''), urgency: String(props.urgency || ''), certainty: String(props.certainty || ''), instruction: String(props.instruction || '').slice(0, 600) },
     }];
   }).slice(0, 250);

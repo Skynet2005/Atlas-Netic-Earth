@@ -47,16 +47,17 @@ export default function AtlasV2() {
   const [point, setPoint] = useState<TerrainPoint | null>(null), [notices, setNotices] = useState<Record<string,string>>({});
   const [surface, setSurface] = useState<Surface>('satellite'), [terrain, setTerrain] = useState(true), [borders, setBorders] = useState(true), [labels, setLabels] = useState(true), [exaggeration, setExaggeration] = useState(1), [shading, setShading] = useState(true);
   const [trafficLayers, setTrafficLayers] = useState<TrafficLayers>({ air: false, military: false, maritime: false }), [selectedTraffic, setSelectedTraffic] = useState<TrafficTarget | null>(null), [trafficPaused, setTrafficPaused] = useState(false);
-  const [intelLayers, setIntelLayers] = useState<IntelligenceLayers>(DEFAULT_INTELLIGENCE_LAYERS), [selectedSignal, setSelectedSignal] = useState<IntelligenceSignal | null>(null), [satelliteGroup, setSatelliteGroup] = useState('STATIONS'), [replayMinutes, setReplayMinutes] = useState(0);
+  const [intelLayers, setIntelLayers] = useState<IntelligenceLayers>(DEFAULT_INTELLIGENCE_LAYERS), [selectedSignal, setSelectedSignal] = useState<IntelligenceSignal | null>(null), [satelliteGroup, setSatelliteGroup] = useState('STATIONS'), [replayMinutes, setReplayMinutes] = useState(0), [replayAt, setReplayAt] = useState<number|null>(null);
   const [panelOpen, setPanelOpen] = useState(true), [panelTab, setPanelTab] = useState<PanelTab>('intel'), [toolsOpen, setToolsOpen] = useState(false), [shareMessage, setShareMessage] = useState('');
   const sceneApplied = useRef(false);
   const getGlobe = useCallback(() => globeRef.current, []);
   const notice = useCallback((key: string, message: string | null) => setNotices(previous => { const next = { ...previous }; if (message) next[key] = message; else delete next[key]; return next; }), []);
   const trafficFeeds = useTraffic(trafficLayers, ready, view.latitude, view.longitude, trafficPaused);
-  const replayTimestamp = replayMinutes > 0 ? Date.now() - replayMinutes * 60_000 : null;
-  const trafficTargets = useMemo(() => (replayTimestamp === null ? [...trafficFeeds.air.targets, ...trafficFeeds.maritime.targets] : trafficFeeds.at(replayTimestamp)).filter(target => trafficLayers[target.kind]), [trafficFeeds.air.targets, trafficFeeds.maritime.targets, trafficFeeds, replayTimestamp, trafficLayers]);
-  const intelligence = useIntelligence(intelLayers, ready, view.latitude, view.longitude, satelliteGroup, replayMinutes);
+  const airTargets=trafficFeeds.air.targets,maritimeTargets=trafficFeeds.maritime.targets,trafficAt=trafficFeeds.at;
+  const trafficTargets = useMemo(() => (replayAt === null ? [...airTargets, ...maritimeTargets] : trafficAt(replayAt)).filter(target => trafficLayers[target.kind]), [airTargets, maritimeTargets, trafficAt, replayAt, trafficLayers]);
+  const intelligence = useIntelligence(intelLayers, ready, view.latitude, view.longitude, satelliteGroup, replayAt);
   const diagnostics = useDiagnostics(intelligence.allSignals.length + trafficTargets.length);
+  const setReplay=useCallback((minutes:number)=>{setReplayMinutes(minutes);setReplayAt(minutes>0?Date.now()-minutes*60_000:null);},[]);
 
   useEffect(() => {
     let cancelled = false, engine: Globe | undefined, renderer: IntelligenceRenderer | undefined;
@@ -90,10 +91,12 @@ export default function AtlasV2() {
     sceneApplied.current = true;
     const scene = readSceneHash();
     if (!scene) return;
-    setSurface(scene.surface); setTerrain(scene.terrain); setBorders(scene.borders); setLabels(scene.labels); setExaggeration(scene.exaggeration);
-    setTrafficLayers(scene.traffic); setIntelLayers(scene.intelligence); setSatelliteGroup(scene.satelliteGroup); setReplayMinutes(scene.replayMinutes || 0);
-    globeRef.current?.restoreCamera(scene.camera);
-  }, [ready]);
+    queueMicrotask(()=>{
+      setSurface(scene.surface); setTerrain(scene.terrain); setBorders(scene.borders); setLabels(scene.labels); setExaggeration(scene.exaggeration);
+      setTrafficLayers(scene.traffic); setIntelLayers(scene.intelligence); setSatelliteGroup(scene.satelliteGroup); setReplay(scene.replayMinutes || 0);
+      globeRef.current?.restoreCamera(scene.camera);
+    });
+  }, [ready,setReplay]);
 
   useEffect(() => {
     if (!shareMessage) return;
@@ -126,7 +129,7 @@ export default function AtlasV2() {
     {panelOpen && <aside className={styles.panel} aria-label="Atlas controls"><div className={styles.tabBar}><button data-active={panelTab==='map'} onClick={() => setPanelTab('map')}><Layers3 size={14}/>Map</button><button data-active={panelTab==='traffic'} onClick={() => setPanelTab('traffic')}><Activity size={14}/>Traffic</button><button data-active={panelTab==='intel'} onClick={() => setPanelTab('intel')}><Database size={14}/>Intel</button></div><div className={styles.panelBody}>
       {panelTab === 'map' && <div className={styles.mapSection}><h3>MAP & DISPLAY</h3><div className={styles.controlRow}><label>Surface</label><select value={surface} onChange={event => setSurface(event.target.value as Surface)}><option value="satellite">Satellite</option><option value="relief">Relief</option></select></div><div className={styles.controlRow}><label>3D terrain</label><Switch checked={terrain} onCheckedChange={setTerrain}/></div><div className={styles.controlRow}><label>Terrain shading</label><Switch checked={shading} onCheckedChange={setShading}/></div><div className={styles.controlRow}><label>Country borders</label><Switch checked={borders} onCheckedChange={setBorders}/></div><div className={styles.controlRow}><label>Country labels</label><Switch checked={labels} onCheckedChange={setLabels}/></div><div className={styles.sliderBlock}><div className={styles.rowBetween}><span>Height scale</span><strong>{exaggeration.toFixed(1)}×</strong></div><input type="range" min="1" max="6" step="0.5" value={exaggeration} onChange={event => setExaggeration(Number(event.target.value))}/></div><div className={styles.controlRow}><label>Altitude units</label><AltitudeUnits/></div></div>}
       {panelTab === 'traffic' && <div className={styles.trafficWrap}><TrafficPanel layers={trafficLayers} onChange={setTrafficLayers} feeds={trafficFeeds} onBaltic={() => globeRef.current?.overview(24.8, 59.7, 1_100_000)}/></div>}
-      {panelTab === 'intel' && <IntelligencePanel layers={intelLayers} onChange={setIntelLayers} feeds={feedMap} satelliteGroup={satelliteGroup} onSatelliteGroup={setSatelliteGroup} replayMinutes={replayMinutes} onReplay={setReplayMinutes} diagnostics={diagnostics} trafficHealth={trafficHealth}/>} 
+      {panelTab === 'intel' && <IntelligencePanel layers={intelLayers} onChange={setIntelLayers} feeds={feedMap} satelliteGroup={satelliteGroup} onSatelliteGroup={setSatelliteGroup} replayMinutes={replayMinutes} onReplay={setReplay} diagnostics={diagnostics} trafficHealth={trafficHealth}/>} 
     </div></aside>}
     <div className={styles.status}><span className={replayMinutes ? undefined : styles.liveDot}/><span>{status}</span><span>·</span><span>{view.latitude.toFixed(2)}°, {view.longitude.toFixed(2)}°</span><span>·</span><span>{formatAltitude(view.altitude, unit)}</span>{Object.values(notices).length>0 && <><span>·</span><span>{Object.values(notices)[0]}</span></>}</div>
     {selectedSignal && <aside className={styles.selectionCard}><header><div><h3>{selectedSignal.name}</h3><p>{selectedSignal.kind} · {selectedSignal.source} · {selectedSignal.quality}</p></div><button aria-label="Close intelligence detail" onClick={() => { setSelectedSignal(null); intelligenceRenderer.current?.clearSelection(); }}><X size={18}/></button></header><dl className={styles.selectionGrid}><div><dt>Position</dt><dd>{selectedSignal.latitude.toFixed(4)}, {selectedSignal.longitude.toFixed(4)}</dd></div><div><dt>Altitude</dt><dd>{selectedSignal.altitude === null ? 'Not reported' : formatAltitude(selectedSignal.altitude, unit)}</dd></div><div><dt>Observed</dt><dd>{new Date(selectedSignal.observedAt).toLocaleString()}</dd></div><div><dt>Severity</dt><dd>{selectedSignal.severity}</dd></div>{Object.entries(selectedSignal.details).filter(([,value]) => value !== null && value !== '' && !String(value).startsWith('1 ') && !String(value).startsWith('2 ')).slice(0,8).map(([key,value]) => <div key={key}><dt>{key}</dt><dd>{String(value)}</dd></div>)}</dl>{selectedSignal.sourceUrl && <a className={styles.sourceLink} href={selectedSignal.sourceUrl} target="_blank" rel="noreferrer">Open source record ↗</a>}</aside>}

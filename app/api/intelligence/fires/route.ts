@@ -2,6 +2,7 @@ import { cachedSource, fetchProvider } from '@/lib/data/source-runtime';
 import { boxesAround, centroidOfCoordinates, finiteNumber, parseCsv, parseViewQuery, timeOr } from '@/lib/intelligence/parsers';
 import type { IntelligenceSignal, SourceHealth } from '@/lib/intelligence/types';
 
+const record=(value:unknown):Record<string,unknown>=>value!==null&&typeof value==='object'?value as Record<string,unknown>:{};
 function fireTime(date: string, time: string) {
   const padded = time.padStart(4, '0');
   return Date.parse(`${date}T${padded.slice(0, 2)}:${padded.slice(2)}:00Z`);
@@ -32,16 +33,23 @@ async function eonet(center: { latitude: number; longitude: number }) {
   const events = (await Promise.all(boxesAround(center.latitude, center.longitude).map(async box => {
     const bbox = `${box.west.toFixed(3)},${box.north.toFixed(3)},${box.east.toFixed(3)},${box.south.toFixed(3)}`;
     const response = await fetchProvider(`https://eonet.gsfc.nasa.gov/api/v3/events?category=wildfires&status=open&limit=300&bbox=${bbox}`, { headers: { Accept: 'application/json', 'User-Agent': 'Atlas-Netic/2.0' } }, { timeoutMs: 10_000, retries: 2 });
-    return ((await response.json()) as { events?: any[] }).events || [];
+    const payload=record(await response.json());
+    return Array.isArray(payload.events)?payload.events:[];
   }))).flat();
   const dedupe = new Map<string, IntelligenceSignal>();
-  for (const event of events) {
-    const geometry = Array.isArray(event?.geometry) ? [...event.geometry].sort((a, b) => Date.parse(b.date || '') - Date.parse(a.date || ''))[0] : null;
-    const centroid = geometry?.type === 'Point' && Array.isArray(geometry.coordinates) ? { longitude: Number(geometry.coordinates[0]), latitude: Number(geometry.coordinates[1]) } : centroidOfCoordinates(geometry?.coordinates);
+  for (const item of events) {
+    const event=record(item),geometries=Array.isArray(event.geometry)?event.geometry.map(record):[];
+    const geometry=[...geometries].sort((a,b)=>Date.parse(String(b.date||''))-Date.parse(String(a.date||'')))[0];
+    if(!geometry)continue;
+    const coordinates=geometry.coordinates;
+    const centroid = geometry.type === 'Point' && Array.isArray(coordinates)
+      ? { longitude: Number(coordinates[0]), latitude: Number(coordinates[1]) }
+      : centroidOfCoordinates(coordinates);
     if (!centroid || !Number.isFinite(centroid.latitude) || !Number.isFinite(centroid.longitude)) continue;
-    const observedAt = timeOr(geometry?.date, Date.now());
+    const observedAt = timeOr(geometry.date, Date.now());
     const id = `fire:eonet:${String(event.id || `${centroid.latitude}:${centroid.longitude}`)}`;
-    dedupe.set(id, { id, kind: 'fires', name: String(event.title || 'Wildfire event'), latitude: centroid.latitude, longitude: centroid.longitude, altitude: 0, observedAt, expiresAt: observedAt + 7 * 24 * 60 * 60 * 1000, source: 'NASA EONET', sourceUrl: String(event.link || 'https://eonet.gsfc.nasa.gov/'), severity: 'moderate', quality: 'fallback', details: { description: String(event.description || '').slice(0, 500), magnitude: finiteNumber(event.magnitudeValue), magnitudeUnit: String(event.magnitudeUnit || ''), sourceCount: Array.isArray(event.sources) ? event.sources.length : 0 } });
+    const sources=Array.isArray(event.sources)?event.sources:[];
+    dedupe.set(id, { id, kind: 'fires', name: String(event.title || 'Wildfire event'), latitude: centroid.latitude, longitude: centroid.longitude, altitude: 0, observedAt, expiresAt: observedAt + 7 * 24 * 60 * 60 * 1000, source: 'NASA EONET', sourceUrl: String(event.link || 'https://eonet.gsfc.nasa.gov/'), severity: 'moderate', quality: 'fallback', details: { description: String(event.description || '').slice(0, 500), magnitude: finiteNumber(event.magnitudeValue), magnitudeUnit: String(event.magnitudeUnit || ''), sourceCount: sources.length } });
   }
   return [...dedupe.values()].slice(0, 500);
 }

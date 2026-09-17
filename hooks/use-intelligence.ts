@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { EMPTY_HEALTH, type IntelligenceKind, type IntelligenceLayers, type IntelligenceSignal, type IntelligenceSnapshot, type SatelliteRecord, type SatelliteSnapshot, type SourceHealth } from '@/lib/intelligence/types';
+import { EMPTY_HEALTH, type IntelligenceKind, type IntelligenceLayers, type IntelligenceSignal, type IntelligenceSnapshot, type SatelliteSnapshot, type SourceHealth } from '@/lib/intelligence/types';
 import { propagateSatellites } from '@/lib/intelligence/sgp4';
 
 export type IntelligenceFeed = { signals: IntelligenceSignal[]; health: SourceHealth; refresh: () => void };
@@ -83,17 +83,16 @@ function useSatellites(enabled: boolean, group: string, replayAt: number | null)
   return { signals: enabled ? signals : [], health, refresh: useCallback(() => setToken(value => value + 1), []) };
 }
 
-export function useIntelligence(layers: IntelligenceLayers, ready: boolean, latitude: number, longitude: number, satelliteGroup: string, replayMinutes = 0) {
+export function useIntelligence(layers: IntelligenceLayers, ready: boolean, latitude: number, longitude: number, satelliteGroup: string, replayAt: number | null = null) {
   const bucketLat = Math.round(latitude * 4) / 4, bucketLon = Math.round(longitude * 4) / 4;
   const active = ready;
   const earthquakes = useSignalFeed('earthquakes', active && layers.earthquakes, '/api/intelligence/earthquakes', 60_000);
   const fires = useSignalFeed('fires', active && layers.fires, `/api/intelligence/fires?lat=${bucketLat}&lon=${bucketLon}`, 5 * 60_000);
   const weather = useSignalFeed('weather', active && layers.weather, `/api/intelligence/weather?lat=${bucketLat}&lon=${bucketLon}`, 60_000);
-  const replayAt = replayMinutes > 0 ? Date.now() - replayMinutes * 60_000 : null;
   const satellites = useSatellites(active && layers.satellites, satelliteGroup, replayAt);
   const allSignals = useMemo(() => {
-    const target = replayAt ?? Date.now();
-    const visible = (signals: IntelligenceSignal[]) => signals.filter(signal => signal.observedAt <= target && (signal.expiresAt === null || signal.expiresAt >= target));
+    if (replayAt === null) return [...earthquakes.signals, ...fires.signals, ...weather.signals, ...satellites.signals];
+    const visible = (signals: IntelligenceSignal[]) => signals.filter(signal => signal.observedAt <= replayAt && (signal.expiresAt === null || signal.expiresAt >= replayAt));
     return [...visible(earthquakes.signals), ...visible(fires.signals), ...visible(weather.signals), ...satellites.signals];
   }, [earthquakes.signals, fires.signals, weather.signals, satellites.signals, replayAt]);
   return { earthquakes, fires, weather, satellites, allSignals, replayAt };

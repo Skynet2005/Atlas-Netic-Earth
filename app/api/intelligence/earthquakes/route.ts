@@ -3,23 +3,25 @@ import { finiteNumber, severityFromMagnitude, timeOr } from '@/lib/intelligence/
 import type { IntelligenceSignal } from '@/lib/intelligence/types';
 
 const SOURCE_URL = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson';
+const record=(value:unknown):Record<string,unknown>=>value!==null&&typeof value==='object'?value as Record<string,unknown>:{};
 
 function parseFeed(raw: unknown, now: number): IntelligenceSignal[] {
-  const features = (raw as { features?: unknown[] })?.features;
+  const features = record(raw).features;
   if (!Array.isArray(features)) throw new Error('USGS response did not contain features.');
-  return features.flatMap((feature: any) => {
-    const coordinates = feature?.geometry?.coordinates;
+  return features.flatMap(item => {
+    const feature=record(item),geometry=record(feature.geometry),props=record(feature.properties),coordinates=geometry.coordinates;
     if (!Array.isArray(coordinates)) return [];
     const longitude = finiteNumber(coordinates[0]), latitude = finiteNumber(coordinates[1]), depthKm = finiteNumber(coordinates[2]);
     if (longitude === null || latitude === null || Math.abs(longitude) > 180 || Math.abs(latitude) > 90) return [];
-    const magnitude = finiteNumber(feature?.properties?.mag) ?? 0;
-    const observedAt = timeOr(feature?.properties?.time, now);
+    const magnitude = finiteNumber(props.mag) ?? 0;
+    const observedAt = timeOr(props.time, now);
+    const sourceUrl=typeof props.url==='string'?props.url:SOURCE_URL;
     return [{
-      id: `quake:${String(feature?.id || `${latitude}:${longitude}:${observedAt}`)}`, kind: 'earthquakes' as const,
-      name: String(feature?.properties?.place || `M${magnitude.toFixed(1)} earthquake`), latitude, longitude, altitude: 0,
-      observedAt, expiresAt: observedAt + 24 * 60 * 60 * 1000, source: 'USGS', sourceUrl: feature?.properties?.url || SOURCE_URL,
+      id: `quake:${String(feature.id || `${latitude}:${longitude}:${observedAt}`)}`, kind: 'earthquakes' as const,
+      name: String(props.place || `M${magnitude.toFixed(1)} earthquake`), latitude, longitude, altitude: 0,
+      observedAt, expiresAt: observedAt + 24 * 60 * 60 * 1000, source: 'USGS', sourceUrl,
       severity: severityFromMagnitude(magnitude), quality: 'reported' as const,
-      details: { magnitude, depthKm, felt: finiteNumber(feature?.properties?.felt), tsunami: Boolean(feature?.properties?.tsunami), significance: finiteNumber(feature?.properties?.sig), status: String(feature?.properties?.status || '') },
+      details: { magnitude, depthKm, felt: finiteNumber(props.felt), tsunami: Boolean(props.tsunami), significance: finiteNumber(props.sig), status: String(props.status || '') },
     }];
   }).sort((a, b) => b.observedAt - a.observedAt).slice(0, 800);
 }
