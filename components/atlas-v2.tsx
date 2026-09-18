@@ -48,9 +48,9 @@ export default function AtlasV2() {
   const [view, setView] = useState<ViewInfo>({ latitude: 24, longitude: -90, altitude: 18_000_000, heading: 0, pitch: -90, range: 18_000_000 });
   const [point, setPoint] = useState<TerrainPoint | null>(null), [notices, setNotices] = useState<Record<string,string>>({});
   const [surface, setSurface] = useState<Surface>('satellite'), [terrain, setTerrain] = useState(true), [borders, setBorders] = useState(true), [labels, setLabels] = useState(true), [exaggeration, setExaggeration] = useState(1), [shading, setShading] = useState(true);
-  const [trafficLayers, setTrafficLayers] = useState<TrafficLayers>({ air: false, military: false, maritime: false }), [selectedTraffic, setSelectedTraffic] = useState<TrafficTarget | null>(null), [trafficPaused, setTrafficPaused] = useState(false);
+  const [trafficLayers, setTrafficLayers] = useState<TrafficLayers>({ air: true, military: true, maritime: true }), [selectedTraffic, setSelectedTraffic] = useState<TrafficTarget | null>(null), [trafficPaused, setTrafficPaused] = useState(false);
   const [intelLayers, setIntelLayers] = useState<IntelligenceLayers>(DEFAULT_INTELLIGENCE_LAYERS), [selectedSignal, setSelectedSignal] = useState<IntelligenceSignal | null>(null), [satelliteGroup, setSatelliteGroup] = useState('STATIONS'), [replayMinutes, setReplayMinutes] = useState(0), [replayAt, setReplayAt] = useState<number|null>(null);
-  const [panelOpen, setPanelOpen] = useState(true), [panelTab, setPanelTab] = useState<PanelTab>('intel'), [toolsOpen, setToolsOpen] = useState(false), [shareMessage, setShareMessage] = useState('');
+  const [panelOpen, setPanelOpen] = useState(false), [panelTab, setPanelTab] = useState<PanelTab>('intel'), [toolsOpen, setToolsOpen] = useState(false), [shareMessage, setShareMessage] = useState('');
   const sceneApplied = useRef(false);
   const getGlobe = useCallback(() => globeRef.current, []);
   const notice = useCallback((key: string, message: string | null) => setNotices(previous => { const next = { ...previous }; if (message) next[key] = message; else delete next[key]; return next; }), []);
