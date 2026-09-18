@@ -59,9 +59,9 @@ export type SatelliteSnapshot = {
 
 export const DEFAULT_INTELLIGENCE_LAYERS: IntelligenceLayers = {
   earthquakes: true,
-  fires: false,
-  weather: false,
-  satellites: false,
+  fires: true,
+  weather: true,
+  satellites: true,
 };
 
 export const EMPTY_HEALTH = (id: IntelligenceKind): SourceHealth => ({
