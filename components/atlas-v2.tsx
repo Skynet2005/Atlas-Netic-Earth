@@ -6,7 +6,7 @@ import { Globe, loadCesium, type Surface, type TerrainPoint, type ViewInfo } fro
 import { useTraffic } from '@/hooks/use-traffic';
 import type { TrafficLayers, TrafficTarget } from '@/lib/traffic';
 import { TrafficPanel } from '@/components/traffic-panel';
-import { Switch } from '@/components/ui/switch';
+import { Switch } from '@/components/switch';
 import { AltitudeUnits } from '@/components/altitude-units';
 import { useAltitude } from '@/hooks/use-altitude';
 import { formatAltitude } from '@/lib/altitude';
