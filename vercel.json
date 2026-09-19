@@ -2,5 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "buildCommand": "pnpm build",
-  "installCommand": "npm install --global pnpm@11.25.0 && pnpm install --frozen-lockfile"
+  "installCommand": "npm install --global pnpm@11.25.0 && pnpm install --frozen-lockfile",
+  "github": {
+    "autoJobCancelation": true
+  }
 }
