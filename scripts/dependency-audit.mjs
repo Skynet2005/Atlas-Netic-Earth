@@ -33,10 +33,11 @@ for (const file of files) {
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 const dependencies = Object.keys(pkg.dependencies || {});
-const devDependencies = new Set(Object.keys(pkg.devDependencies || {}));
+const devDependencies = Object.keys(pkg.devDependencies || {});
+const devDependencySet = new Set(devDependencies);
 const frameworkRuntime = new Set(['next', 'react', 'react-dom']);
 const unused = dependencies.filter(name => !used.has(name) && !frameworkRuntime.has(name));
-const missing = [...used].filter(name => !dependencies.includes(name) && !devDependencies.has(name));
+const missing = [...used].filter(name => !dependencies.includes(name) && !devDependencySet.has(name));
 
 const forbidden = [
   'components/earth-explorer.tsx',
@@ -44,6 +45,12 @@ const forbidden = [
   'vendor/shadcn-tailwind-4.13.0.css',
   'db',
   'drizzle.config.ts',
+  '.openai',
+  'vite.config.ts',
+  'cloudflare-env.d.ts',
+  'examples/d1',
+  'build/sites-vite-plugin.ts',
+  'app/chatgpt-auth.ts',
 ];
 
 console.log('Atlas-Netic dependency audit');
@@ -51,7 +58,22 @@ console.log(`Source files scanned: ${files.length}`);
 console.log(`Runtime dependencies: ${dependencies.join(', ')}`);
 console.log(`External packages referenced: ${[...used].sort().join(', ')}`);
 
+const expectedRuntime = ['cesium', 'lucide-react', 'next', 'react', 'react-dom'];
+const expectedDev = ['@types/node', '@types/react', '@types/react-dom', 'eslint', 'eslint-config-next', 'typescript'];
+const unexpectedRuntime = dependencies.filter(name => !expectedRuntime.includes(name));
+const unexpectedDev = devDependencies.filter(name => !expectedDev.includes(name));
+const missingRuntime = expectedRuntime.filter(name => !dependencies.includes(name));
+const missingDev = expectedDev.filter(name => !devDependencies.includes(name));
+
 let failed = false;
+if (unexpectedRuntime.length || missingRuntime.length) {
+  failed = true;
+  console.error(`Unexpected/missing runtime dependency surface. unexpected=[${unexpectedRuntime.join(', ')}] missing=[${missingRuntime.join(', ')}]`);
+}
+if (unexpectedDev.length || missingDev.length) {
+  failed = true;
+  console.error(`Unexpected/missing development dependency surface. unexpected=[${unexpectedDev.join(', ')}] missing=[${missingDev.join(', ')}]`);
+}
 if (unused.length) {
   failed = true;
   console.error(`Unused direct runtime dependencies: ${unused.join(', ')}`);
