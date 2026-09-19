@@ -22,3 +22,15 @@ test('source runtime serves stale data when refresh fails inside stale window', 
   const result = await cachedSource({ key:'stale', ttlMs:0, staleMs:5000, loader: async () => { throw new Error('offline'); } });
   assert.equal(result.data, 'first'); assert.equal(result.state, 'stale'); assert.equal(result.cache, 'stale');
 });
+
+
+test('source runtime bounds warm-instance cache growth', async () => {
+  clearSourceRuntimeForTests();
+  let firstLoads = 0;
+  await cachedSource({ key:'key-0', ttlMs:60_000, staleMs:60_000, loader: async () => { firstLoads++; return 0; } });
+  for (let i = 1; i <= 130; i++) {
+    await cachedSource({ key:`key-${i}`, ttlMs:60_000, staleMs:60_000, loader: async () => i });
+  }
+  await cachedSource({ key:'key-0', ttlMs:60_000, staleMs:60_000, loader: async () => { firstLoads++; return 0; } });
+  assert.equal(firstLoads, 2);
+});
