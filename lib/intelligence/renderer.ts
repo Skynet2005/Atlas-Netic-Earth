@@ -82,31 +82,33 @@ export class IntelligenceRenderer {
   private renderClusters() {
     const C = this.C, entities = this.clusters.entities;
     entities.removeAll();
-    for (const cluster of clusterIntelligence([...this.signals.values()], 12).slice(0, 180)) {
+    for (const [index, cluster] of clusterIntelligence([...this.signals.values()], 18).slice(0, 72).entries()) {
       const color = this.clusterColor(cluster);
       const radius = Math.max(95_000, Math.min(420_000, 80_000 + Math.sqrt(cluster.count) * 46_000));
+      const showLabel = index < 24 && (cluster.count >= 3 || cluster.severity === 'severe' || cluster.severity === 'extreme');
       entities.add({
         id: cluster.id,
         position: C.Cartesian3.fromDegrees(cluster.longitude, cluster.latitude),
         ellipse: {
           semiMajorAxis: radius,
           semiMinorAxis: radius,
-          material: color.withAlpha(Math.min(0.28, 0.08 + cluster.count * 0.012)),
+          material: color.withAlpha(Math.min(0.25, 0.07 + Math.sqrt(cluster.count) * 0.018)),
           outline: true,
-          outlineColor: color.withAlpha(0.76),
+          outlineColor: color.withAlpha(0.68),
           heightReference: C.HeightReference.CLAMP_TO_GROUND,
         },
-        label: {
-          text: `${cluster.count}\n${intelligenceClusterSummary(cluster)}`,
-          font: '600 11px Inter, sans-serif',
-          fillColor: C.Color.WHITE.withAlpha(0.97),
+        label: showLabel ? {
+          text: intelligenceClusterSummary(cluster),
+          font: '600 10px Inter, sans-serif',
+          fillColor: C.Color.WHITE.withAlpha(0.94),
           outlineColor: C.Color.fromCssColorString('#031018'),
           outlineWidth: 3,
           style: C.LabelStyle.FILL_AND_OUTLINE,
+          pixelOffset: new C.Cartesian2(0, -8),
           heightReference: C.HeightReference.CLAMP_TO_GROUND,
           disableDepthTestDistance: 0,
           distanceDisplayCondition: new C.DistanceDisplayCondition(0, 32_000_000),
-        },
+        } : undefined,
       });
     }
   }
