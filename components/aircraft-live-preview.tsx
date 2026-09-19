@@ -70,8 +70,8 @@ export function AircraftLivePreview({ target }: { target: TrafficTarget }) {
         scene.backgroundColor = C.Color.TRANSPARENT;
         if (scene.skyBox) scene.skyBox.show = false;
         if (scene.skyAtmosphere) scene.skyAtmosphere.show = false;
-        scene.sun.show = false;
-        scene.moon.show = false;
+        if (scene.sun) scene.sun.show = false;
+        if (scene.moon) scene.moon.show = false;
         scene.fog.enabled = false;
         scene.highDynamicRange = true;
         scene.postProcessStages.fxaa.enabled = true;
