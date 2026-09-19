@@ -68,7 +68,7 @@ export default function AtlasV2() {
   const setReplay=useCallback((minutes:number)=>{setReplayMinutes(minutes);setReplayAt(minutes>0?Date.now()-minutes*60_000:null);},[]);
 
   useEffect(() => {
-    if (browserTestShell) { setLoading(false); return; }
+    if (browserTestShell) return;
     let cancelled = false, engine: Globe | undefined, renderer: IntelligenceRenderer | undefined, classifiedTraffic: TrafficRenderer | undefined;
     void (async () => {
       try {
