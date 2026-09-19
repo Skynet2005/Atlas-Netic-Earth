@@ -47,3 +47,7 @@ next-env.d.ts
 
 # Cesium runtime assets are copied from the pinned dependency during build.
 /public/cesium/
+
+# browser regression artifacts
+/playwright-report/
+/test-results/
