@@ -1,7 +1,7 @@
 "use client";
 
 import { Plane, Radar, Ship } from 'lucide-react';
-import { Switch } from '@/components/ui/switch';
+import { Switch } from '@/components/switch';
 import type { TrafficLayers } from '@/lib/traffic';
 import type { useTraffic } from '@/hooks/use-traffic';
 
