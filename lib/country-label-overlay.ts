@@ -23,7 +23,12 @@ export class CountryLabelOverlay {
   private frame: number | null = null;
   private destroyed = false;
 
-  constructor(private C: CModule, private viewer: Cesium.Viewer, host: HTMLElement) {
+  private readonly C: CModule;
+  private readonly viewer: Cesium.Viewer;
+
+  constructor(C: CModule, viewer: Cesium.Viewer, host: HTMLElement) {
+    this.C = C;
+    this.viewer = viewer;
     this.root = document.createElement('div');
     this.root.setAttribute('aria-hidden', 'true');
     Object.assign(this.root.style, {
