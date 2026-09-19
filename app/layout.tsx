@@ -1,10 +1,17 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#02070c",
+};
+
 export const metadata: Metadata = {
-  title: "Atlas-Netic — Explore Earth in 3D",
+  title: "Atlas-Netic — Earth Intelligence",
   applicationName: "Atlas-Netic",
-  description: "Explore Earth with measured 3D terrain, satellite imagery, country borders, and public aircraft and AIS transponder reports.",
+  description: "Explore a live 3D Earth intelligence view with measured terrain, satellite imagery, public traffic, weather, fire, earthquake, and orbital data.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
