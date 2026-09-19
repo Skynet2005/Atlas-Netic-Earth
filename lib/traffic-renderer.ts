@@ -8,7 +8,7 @@ type CModule=typeof Cesium;
 export class TrafficRenderer{
  private targets=new Map<string,TrafficTarget>();
  private detail=false;
- private zoom:SemanticZoomLevel='global';
+ private zoom:SemanticZoomLevel='local';
  private readonly clusters:Cesium.CustomDataSource;
  private removeCameraListener:()=>void;
 
