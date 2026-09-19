@@ -15,6 +15,10 @@ Atlas-Netic source code and third-party data are separate works. Each external p
 | Fires fallback | NASA EONET | open wildfire events near map center | No |
 | Weather alerts | NOAA / National Weather Service | active alerts affecting the queried map-center point | No |
 | Satellites | CelesTrak | current GP/TLE catalogs; positions derived locally with SGP4/SDP4 | No |
+| Ground directions | HeiGIT openrouteservice | geocoding + turn-by-turn road/walk/bike routing; optional toll/highway/ferry avoidance | `OPENROUTESERVICE_API_KEY` |
+| U.S. airways | FAA 28-Day NASR | effective AWY/FIX/NAV subscriber data resolved into globe routes | No |
+| NOTAMs | FAA NOTAM Management Service (NMS) | authorized NMS distribution API only; never scraped from NOTAM Search | FAA-issued access |
+| Amtrak rail | Amtrak GTFS | static schedule, stops and published shape geometry | No |
 
 ## Provider links
 
@@ -29,6 +33,10 @@ Atlas-Netic source code and third-party data are separate works. Each external p
 - NWS API: https://www.weather.gov/documentation/services-web-api
 - CelesTrak GP data: https://celestrak.org/NORAD/documentation/gp-data-formats.php
 - satellite.js: https://github.com/shashwatak/satellite-js
+- HeiGIT API: https://api.heigit.org/
+- FAA NASR subscription: https://www.faa.gov/air_traffic/flight_info/aeronav/Aero_Data/NASR_Subscription/
+- FAA NMS: https://www.faa.gov/about/initiatives/notam
+- Amtrak GTFS: https://content.amtrak.com/content/gtfs/GTFS.zip
 
 ## Important interpretation limits
 
@@ -51,6 +59,11 @@ CelesTrak provides orbital elements rather than a continuously measured live pos
 ### Terrain
 
 Source resolution varies geographically. Terrain exaggeration changes rendering only; inspected source elevations are not multiplied.
+
+
+### Mobility
+
+Road directions depend on the current routing graph and requested avoidance preferences; they are not a substitute for posted closures or restrictions. FAA airway lines represent the effective published NASR network and are intentionally drawn without inventing an assigned flight altitude. NMS NOTAM access is credentialed by the FAA; when it is not configured Atlas reports that state instead of substituting scraped notices. Amtrak's feed used here is static GTFS, so rail results are schedules rather than live train positions or delay predictions.
 
 ## Cache and freshness
 

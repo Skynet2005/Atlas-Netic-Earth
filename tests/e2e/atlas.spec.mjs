@@ -37,6 +37,20 @@ test('Atlas shell is responsive and starts uncluttered', async ({ page }, testIn
 
   await page.keyboard.press('Escape');
   await expect(page.getByLabel('Atlas controls')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Mobility' }).click();
+  await expect(page.getByLabel('Atlas Mobility Center')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Mobility Center' })).toBeVisible();
+  await expect(page.getByText('Turn-by-turn directions')).toBeVisible();
+  const mobilityOverflow = await page.evaluate(() => ({
+    viewport: window.innerWidth,
+    document: document.documentElement.scrollWidth,
+    body: document.body.scrollWidth,
+  }));
+  expect(mobilityOverflow.document).toBeLessThanOrEqual(mobilityOverflow.viewport + 2);
+  expect(mobilityOverflow.body).toBeLessThanOrEqual(mobilityOverflow.viewport + 2);
+  await page.keyboard.press('Escape');
+  await expect(page.getByLabel('Atlas Mobility Center')).toBeHidden();
   expect(pageErrors).toEqual([]);
 });
 
