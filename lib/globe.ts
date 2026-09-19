@@ -93,8 +93,8 @@ export class Globe {
       animation: false, timeline: false, baseLayerPicker: false, geocoder: false,
       homeButton: false, sceneModePicker: false, navigationHelpButton: false,
       fullscreenButton: false, selectionIndicator: false, infoBox: false,
-      creditContainer, requestRenderMode: true, maximumRenderTimeChange: Infinity,
-      showRenderLoopErrors: false, shouldAnimate: false, contextOptions: { webgl: { alpha: false, antialias: true } },
+      creditContainer, requestRenderMode: true, maximumRenderTimeChange: 60,
+      showRenderLoopErrors: false, shouldAnimate: true, contextOptions: { webgl: { alpha: false, antialias: true } },
     });
     const v = this.viewer;
     v.scene.backgroundColor = C.Color.fromCssColorString('#050b13');
@@ -107,12 +107,14 @@ export class Globe {
     v.scene.globe.preloadSiblings = false;
     v.targetFrameRate = mobile ? 30 : 45;
     v.scene.globe.depthTestAgainstTerrain = true;
-    v.scene.globe.enableLighting = false;
+    v.scene.globe.enableLighting = true;
+    v.scene.globe.dynamicAtmosphereLighting = true;
+    v.scene.globe.dynamicAtmosphereLightingFromSun = true;
     v.scene.fog.enabled = true;
     v.scene.fog.density = 0.00008;
     v.scene.globe.showGroundAtmosphere = true;
     v.scene.verticalExaggeration = 1;
-    v.scene.highDynamicRange = false;
+    v.scene.highDynamicRange = true;
     v.useBrowserRecommendedResolution = false;
     v.resolutionScale = Math.min(window.devicePixelRatio || 1, mobile ? 1 : 1.25) / (window.devicePixelRatio || 1);
     const control = v.scene.screenSpaceCameraController;
@@ -211,8 +213,18 @@ export class Globe {
   }
   followTraffic(id:string|null){this.viewer.trackedEntity=id?this.traffic.entities.getById(id):undefined;this.render();}
   showTrail(points:GeoPoint[]){const C=this.C;this.viewer.entities.removeById('selected-trail');if(points.length>1)this.viewer.entities.add({id:'selected-trail',polyline:{positions:points.map(p=>C.Cartesian3.fromDegrees(p.longitude,p.latitude)),clampToGround:true,width:2,material:C.Color.ORANGE}});this.render();}
-  appearance(options:{lighting:boolean;brightness:number;contrast:number;atmosphere:boolean;fog:boolean;stars:boolean}){
-    const v=this.viewer;v.scene.globe.enableLighting=options.lighting;v.clock.currentTime=this.C.JulianDate.now();
+  setDayNight(enabled:boolean){
+    const v=this.viewer;
+    v.scene.globe.enableLighting=enabled;
+    v.scene.globe.dynamicAtmosphereLighting=enabled;
+    v.scene.globe.dynamicAtmosphereLightingFromSun=enabled;
+    v.clock.shouldAnimate=enabled;
+    v.clock.currentTime=this.C.JulianDate.now();
+    v.scene.maximumRenderTimeChange=enabled?60:Infinity;
+    this.render();
+  }
+  appearance(options:{brightness:number;contrast:number;atmosphere:boolean;fog:boolean;stars:boolean}){
+    const v=this.viewer;
     v.scene.globe.showGroundAtmosphere=options.atmosphere;if(v.scene.skyAtmosphere)v.scene.skyAtmosphere.show=options.atmosphere;
     v.scene.fog.enabled=options.fog;if(v.scene.skyBox)v.scene.skyBox.show=options.stars;
     for(const layer of [this.satellite,this.relief])if(layer){layer.brightness=options.brightness;layer.contrast=options.contrast;}this.render();
