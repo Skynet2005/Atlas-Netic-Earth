@@ -48,6 +48,7 @@ function useDiagnostics(objects: number, enabled: boolean) {
 
 export default function AtlasV2() {
   const { unit } = useAltitude();
+  const browserTestShell = process.env.NODE_ENV !== 'production' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('__atlas_e2e') === '1';
   const canvasRef = useRef<HTMLDivElement>(null), creditRef = useRef<HTMLDivElement>(null), globeRef = useRef<Globe | null>(null), intelligenceRenderer = useRef<IntelligenceRenderer | null>(null), trafficRenderer = useRef<TrafficRenderer | null>(null);
   const [ready, setReady] = useState(false), [fatal, setFatal] = useState(''), [retry, setRetry] = useState(0), [terrainReady, setTerrainReady] = useState(false), [loading, setLoading] = useState(true);
   const [view, setView] = useState<ViewInfo>({ latitude: 24, longitude: -90, altitude: 18_000_000, heading: 0, pitch: -90, range: 18_000_000 });
@@ -67,6 +68,7 @@ export default function AtlasV2() {
   const setReplay=useCallback((minutes:number)=>{setReplayMinutes(minutes);setReplayAt(minutes>0?Date.now()-minutes*60_000:null);},[]);
 
   useEffect(() => {
+    if (browserTestShell) { setLoading(false); return; }
     let cancelled = false, engine: Globe | undefined, renderer: IntelligenceRenderer | undefined, classifiedTraffic: TrafficRenderer | undefined;
     void (async () => {
       try {
@@ -84,7 +86,7 @@ export default function AtlasV2() {
       } catch (error) { if (!cancelled) setFatal(error instanceof Error ? error.message : 'Your browser could not start Atlas-Netic.'); }
     })();
     return () => { cancelled = true; setReady(false); intelligenceRenderer.current = null; trafficRenderer.current = null; classifiedTraffic?.destroy(); renderer?.destroy(); globeRef.current = null; engine?.destroy(); };
-  }, [retry, notice]);
+  }, [retry, notice, browserTestShell]);
 
   useEffect(() => { if (ready) void globeRef.current?.setSurface(surface); }, [ready, surface]);
   useEffect(() => { if (ready) globeRef.current?.setTerrain(terrain); }, [ready, terrain]);
