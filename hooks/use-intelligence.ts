@@ -6,6 +6,30 @@ import { propagateSatellites } from '@/lib/intelligence/sgp4';
 export type IntelligenceFeed = { signals: IntelligenceSignal[]; health: SourceHealth; refresh: () => void };
 const signalCache = new Map<string, IntelligenceSnapshot>();
 const satelliteCache = new Map<string, SatelliteSnapshot>();
+const SIGNAL_CACHE_LIMIT = 48;
+
+function rememberSignalSnapshot(key: string, value: IntelligenceSnapshot) {
+  signalCache.delete(key);
+  signalCache.set(key, value);
+  while (signalCache.size > SIGNAL_CACHE_LIMIT) {
+    const oldest = signalCache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    signalCache.delete(oldest);
+  }
+}
+
+async function fetchJsonWithTimeout<T>(url: string, controller: AbortController, milliseconds = 15_000): Promise<T> {
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), milliseconds);
+  try {
+    const response = await fetch(url, { signal: AbortSignal.any([controller.signal, timeout.signal]), cache: 'no-store' });
+    const body = await response.json() as T & { error?: string };
+    if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
+    return body;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function useSignalFeed(kind: Exclude<IntelligenceKind, 'satellites'>, enabled: boolean, url: string, intervalMs: number): IntelligenceFeed {
   const [state, setState] = useState<IntelligenceSnapshot>(() => signalCache.get(url) || { signals: [], fetchedAt: 0, health: EMPTY_HEALTH(kind) });
@@ -19,10 +43,9 @@ function useSignalFeed(kind: Exclude<IntelligenceKind, 'satellites'>, enabled: b
       busy = true;
       setState(old => ({ ...old, health: { ...old.health, phase: old.signals.length ? 'degraded' : 'loading', message: old.signals.length ? 'Refreshing…' : 'Connecting…' } }));
       try {
-        const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
-        const body = await response.json() as IntelligenceSnapshot & { error?: string };
-        if (!response.ok || !Array.isArray(body.signals) || !body.health) throw new Error(body.error || 'Feed unavailable.');
-        signalCache.set(url, body); setState(body);
+        const body = await fetchJsonWithTimeout<IntelligenceSnapshot>(url, controller);
+        if (!Array.isArray(body.signals) || !body.health) throw new Error('Feed unavailable.');
+        rememberSignalSnapshot(url, body); setState(body);
       } catch (error) {
         if (!controller.signal.aborted) setState(old => ({ ...old, health: { ...old.health, phase: old.signals.length ? 'degraded' : 'unavailable', message: `${error instanceof Error ? error.message : 'Feed unavailable.'}${old.signals.length ? ' Last received data retained.' : ''}` } }));
       } finally { busy = false; }
@@ -51,9 +74,8 @@ function useSatellites(enabled: boolean, group: string, replayAt: number | null)
       busy = true;
       setCatalog(old => ({ ...old, health: { ...old.health, phase: old.satellites.length ? 'degraded' : 'loading', message: old.satellites.length ? 'Refreshing elements…' : 'Loading orbital elements…' } }));
       try {
-        const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
-        const body = await response.json() as SatelliteSnapshot & { error?: string };
-        if (!response.ok || !Array.isArray(body.satellites) || !body.health) throw new Error(body.error || 'Satellite catalog unavailable.');
+        const body = await fetchJsonWithTimeout<SatelliteSnapshot>(url, controller);
+        if (!Array.isArray(body.satellites) || !body.health) throw new Error('Satellite catalog unavailable.');
         satelliteCache.set(url, body); setCatalog(body);
       } catch (error) {
         if (!controller.signal.aborted) setCatalog(old => ({ ...old, health: { ...old.health, phase: old.satellites.length ? 'degraded' : 'unavailable', message: `${error instanceof Error ? error.message : 'Satellite catalog unavailable.'}${old.satellites.length ? ' Cached elements retained.' : ''}` } }));
@@ -61,7 +83,9 @@ function useSatellites(enabled: boolean, group: string, replayAt: number | null)
     };
     const cached = satelliteCache.get(url); if (cached) setCatalog(cached);
     void refresh(); const timer = setInterval(() => void refresh(), 60 * 60_000);
-    return () => { controller.abort(); clearInterval(timer); };
+    const visible = () => { if (!document.hidden) void refresh(); };
+    document.addEventListener('visibilitychange', visible);
+    return () => { controller.abort(); clearInterval(timer); document.removeEventListener('visibilitychange', visible); };
   }, [enabled, url, token]);
   useEffect(() => {
     if (!enabled || !catalog.satellites.length) { setSignals([]); return; }
