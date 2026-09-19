@@ -18,15 +18,22 @@ test('Atlas shell is responsive and starts uncluttered', async ({ page }, testIn
   expect(overflow.document).toBeLessThanOrEqual(overflow.viewport + 2);
   expect(overflow.body).toBeLessThanOrEqual(overflow.viewport + 2);
 
+  // Chromium + SwiftShader can spend tens of seconds reading back a live WebGL
+  // canvas. The responsive screenshot gate is for Atlas UI/layout; hide only the
+  // WebGL canvas during capture so screenshots stay deterministic and fast.
+  await page.locator('canvas').evaluateAll(nodes => nodes.forEach(node => { node.dataset.e2eVisibility = node.style.visibility; node.style.visibility = 'hidden'; }));
   const homePath = testInfo.outputPath('atlas-home.png');
-  await page.screenshot({ path: homePath, fullPage: true });
+  await page.screenshot({ path: homePath, animations: 'disabled' });
   await testInfo.attach('Atlas home', { path: homePath, contentType: 'image/png' });
+  await page.locator('canvas').evaluateAll(nodes => nodes.forEach(node => { node.style.visibility = node.dataset.e2eVisibility || ''; delete node.dataset.e2eVisibility; }));
 
   await page.getByRole('button', { name: 'Layers' }).click();
   await expect(page.getByLabel('Atlas controls')).toBeVisible();
+  await page.locator('canvas').evaluateAll(nodes => nodes.forEach(node => { node.style.visibility = 'hidden'; }));
   const controlsPath = testInfo.outputPath('atlas-controls.png');
-  await page.screenshot({ path: controlsPath, fullPage: true });
+  await page.screenshot({ path: controlsPath, animations: 'disabled' });
   await testInfo.attach('Atlas controls', { path: controlsPath, contentType: 'image/png' });
+  await page.locator('canvas').evaluateAll(nodes => nodes.forEach(node => { node.style.visibility = ''; }));
 
   await page.keyboard.press('Escape');
   await expect(page.getByLabel('Atlas controls')).toHaveCount(0);
@@ -40,5 +47,7 @@ test('SEO metadata is present in the rendered document', async ({ page }) => {
   await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', /3D Earth intelligence/i);
   await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', /Atlas-Netic/i);
   await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute('content', 'summary_large_image');
-  await expect(page.locator('script[type="application/ld+json"]')).toContainText('SoftwareApplication');
+  const structured = await page.locator('script[type="application/ld+json"]').evaluate(node => JSON.parse(node.textContent || '{}'));
+  expect(structured['@type']).toBe('SoftwareApplication');
+  expect(structured.name).toBe('Atlas-Netic');
 });
