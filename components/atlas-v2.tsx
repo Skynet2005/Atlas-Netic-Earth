@@ -22,22 +22,28 @@ import styles from './atlas-v2.module.css';
 const ToolsDrawer = dynamic(() => import('@/components/tools-drawer'), { ssr: false });
 type PanelTab = 'map' | 'traffic' | 'intel';
 
-function useDiagnostics(objects: number) {
+function useDiagnostics(objects: number, enabled: boolean) {
+  const objectsRef = useRef(objects);
+  objectsRef.current = objects;
   const [value, setValue] = useState({ fps: 0, objects, heapMb: null as number | null });
   useEffect(() => {
+    if (!enabled) {
+      setValue(current => current.objects === objectsRef.current ? current : { ...current, objects: objectsRef.current });
+      return;
+    }
     let frames = 0, last = performance.now(), raf = 0, active = true;
     const frame = (now: number) => {
       frames++;
       if (now - last >= 1000) {
         const memory = performance as Performance & { memory?: { usedJSHeapSize: number } };
-        setValue({ fps: Math.round(frames * 1000 / (now - last)), objects, heapMb: memory.memory ? memory.memory.usedJSHeapSize / 1024 / 1024 : null });
+        setValue({ fps: Math.round(frames * 1000 / (now - last)), objects: objectsRef.current, heapMb: memory.memory ? memory.memory.usedJSHeapSize / 1024 / 1024 : null });
         frames = 0; last = now;
       }
       if (active) raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
     return () => { active = false; cancelAnimationFrame(raf); };
-  }, [objects]);
+  }, [enabled]);
   return value;
 }
 
@@ -58,7 +64,7 @@ export default function AtlasV2() {
   const airTargets=trafficFeeds.air.targets,maritimeTargets=trafficFeeds.maritime.targets,trafficAt=trafficFeeds.at;
   const trafficTargets = useMemo(() => (replayAt === null ? [...airTargets, ...maritimeTargets] : trafficAt(replayAt)).filter(target => trafficLayers[target.kind]), [airTargets, maritimeTargets, trafficAt, replayAt, trafficLayers]);
   const intelligence = useIntelligence(intelLayers, ready, view.latitude, view.longitude, satelliteGroup, replayAt);
-  const diagnostics = useDiagnostics(intelligence.allSignals.length + trafficTargets.length);
+  const diagnostics = useDiagnostics(intelligence.allSignals.length + trafficTargets.length, panelOpen && panelTab === 'intel');
   const setReplay=useCallback((minutes:number)=>{setReplayMinutes(minutes);setReplayAt(minutes>0?Date.now()-minutes*60_000:null);},[]);
 
   useEffect(() => {
