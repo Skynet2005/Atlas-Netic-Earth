@@ -19,3 +19,8 @@ test('primary menus start closed', () => {
   assert.match(atlas, /\[panelOpen, setPanelOpen\] = useState\(false\)/);
   assert.match(atlas, /\[toolsOpen, setToolsOpen\] = useState\(false\)/);
 });
+
+
+test('day night illumination starts enabled', () => {
+  assert.match(atlas, /\[dayNight, setDayNight\] = useState\(true\)/);
+});
