@@ -108,6 +108,18 @@ export default function AtlasV2() {
     return () => clearTimeout(timer);
   }, [shareMessage]);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (selectedSignal) { setSelectedSignal(null); intelligenceRenderer.current?.clearSelection(); return; }
+      if (selectedTraffic) { setSelectedTraffic(null); globeRef.current?.clearTrafficSelection(); return; }
+      if (toolsOpen) { setToolsOpen(false); return; }
+      if (panelOpen) setPanelOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [panelOpen, toolsOpen, selectedSignal, selectedTraffic]);
+
   const share = async () => {
     const camera = globeRef.current?.cameraSnapshot();
     if (!camera) return;
@@ -127,10 +139,10 @@ export default function AtlasV2() {
     {loading && <div className={styles.loadingCover}/>}<div ref={creditRef} className={styles.credit}/>
     <header className={styles.header}>
       <div className={styles.brand}><span className={styles.brandMark}><Globe2 size={23}/></span><div><h1>Atlas-Netic</h1><p>EARTH INTELLIGENCE</p></div></div>
-      <div className={styles.headerActions}><button onClick={() => { setPanelOpen(true); setPanelTab('intel'); }}><span className={styles.liveDot}/><Database size={17}/><span>Intelligence</span></button><button onClick={() => void share()}><Share2 size={17}/><span>Share</span></button><button onClick={() => setToolsOpen(true)}><Settings2 size={17}/><span>Tools</span></button></div>
+      <div className={styles.headerActions}><button title="Intelligence" aria-expanded={panelOpen && panelTab==='intel'} onClick={() => { setToolsOpen(false); setPanelOpen(open => panelTab === 'intel' ? !open : true); setPanelTab('intel'); }}><span className={styles.liveDot}/><Database size={17}/><span>Intelligence</span></button><button title="Copy scene link" onClick={() => void share()}><Share2 size={17}/><span>Share</span></button><button title="Tools" aria-expanded={toolsOpen} onClick={() => { setPanelOpen(false); setToolsOpen(open => !open); }}><Settings2 size={17}/><span>Tools</span></button></div>
     </header>
-    <nav className={styles.rail} aria-label="Globe controls"><button aria-label="Home" onClick={() => globeRef.current?.home()}><Home size={18}/></button><button aria-label="Zoom in" onClick={() => globeRef.current?.zoom(1)}><Plus size={18}/></button><button aria-label="Zoom out" onClick={() => globeRef.current?.zoom(-1)}><Minus size={18}/></button><button aria-label="Face north" onClick={() => globeRef.current?.north()}><Compass size={18}/></button><button aria-label="Layers" onClick={() => { setPanelOpen(value => !value); setPanelTab('map'); }}><Layers3 size={18}/></button></nav>
-    {panelOpen && <aside className={styles.panel} aria-label="Atlas controls"><div className={styles.tabBar}><button data-active={panelTab==='map'} onClick={() => setPanelTab('map')}><Layers3 size={14}/>Map</button><button data-active={panelTab==='traffic'} onClick={() => setPanelTab('traffic')}><Activity size={14}/>Traffic</button><button data-active={panelTab==='intel'} onClick={() => setPanelTab('intel')}><Database size={14}/>Intel</button></div><div className={styles.panelBody}>
+    <nav className={styles.rail} aria-label="Globe controls"><button title="Home" aria-label="Home" onClick={() => globeRef.current?.home()}><Home size={18}/></button><button title="Zoom in" aria-label="Zoom in" onClick={() => globeRef.current?.zoom(1)}><Plus size={18}/></button><button title="Zoom out" aria-label="Zoom out" onClick={() => globeRef.current?.zoom(-1)}><Minus size={18}/></button><button title="Face north" aria-label="Face north" onClick={() => globeRef.current?.north()}><Compass size={18}/></button><button title="Map layers" aria-label="Layers" aria-expanded={panelOpen && panelTab==='map'} onClick={() => { setToolsOpen(false); setPanelOpen(open => panelTab === 'map' ? !open : true); setPanelTab('map'); }}><Layers3 size={18}/></button></nav>
+    {panelOpen && <aside className={styles.panel} aria-label="Atlas controls"><div className={styles.tabBar}><button data-active={panelTab==='map'} onClick={() => setPanelTab('map')}><Layers3 size={14}/>Map</button><button data-active={panelTab==='traffic'} onClick={() => setPanelTab('traffic')}><Activity size={14}/>Traffic</button><button data-active={panelTab==='intel'} onClick={() => setPanelTab('intel')}><Database size={14}/>Intel</button><button className={styles.panelClose} title="Close controls" aria-label="Close controls" onClick={() => setPanelOpen(false)}><X size={15}/></button></div><div className={styles.panelBody}>
       {panelTab === 'map' && <div className={styles.mapSection}><h3>MAP & DISPLAY</h3><div className={styles.controlRow}><label>Surface</label><select value={surface} onChange={event => setSurface(event.target.value as Surface)}><option value="satellite">Satellite</option><option value="relief">Relief</option></select></div><div className={styles.controlRow}><label>3D terrain</label><Switch checked={terrain} onCheckedChange={setTerrain}/></div><div className={styles.controlRow}><label>Terrain shading</label><Switch checked={shading} onCheckedChange={setShading}/></div><div className={styles.controlRow}><label>Country borders</label><Switch checked={borders} onCheckedChange={setBorders}/></div><div className={styles.controlRow}><label>Country labels</label><Switch checked={labels} onCheckedChange={setLabels}/></div><div className={styles.sliderBlock}><div className={styles.rowBetween}><span>Height scale</span><strong>{exaggeration.toFixed(1)}×</strong></div><input type="range" min="1" max="6" step="0.5" value={exaggeration} onChange={event => setExaggeration(Number(event.target.value))}/></div><div className={styles.controlRow}><label>Altitude units</label><AltitudeUnits/></div></div>}
       {panelTab === 'traffic' && <div className={styles.trafficWrap}><TrafficPanel layers={trafficLayers} onChange={setTrafficLayers} feeds={trafficFeeds} onBaltic={() => globeRef.current?.overview(24.8, 59.7, 1_100_000)}/></div>}
       {panelTab === 'intel' && <IntelligencePanel layers={intelLayers} onChange={setIntelLayers} feeds={feedMap} satelliteGroup={satelliteGroup} onSatelliteGroup={setSatelliteGroup} replayMinutes={replayMinutes} onReplay={setReplay} diagnostics={diagnostics} trafficHealth={trafficHealth}/>} 
