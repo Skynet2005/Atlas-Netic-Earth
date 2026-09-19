@@ -36,7 +36,7 @@ test('Atlas shell is responsive and starts uncluttered', async ({ page }, testIn
 test('SEO metadata is present in the rendered document', async ({ page }) => {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveTitle(/Atlas-Netic.*Earth Intelligence/i);
-  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://atlas-netic-earth.vercel.app/');
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://atlas-netic-earth.vercel.app');
   await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', /3D Earth intelligence/i);
   await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', /Atlas-Netic/i);
   await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute('content', 'summary_large_image');
