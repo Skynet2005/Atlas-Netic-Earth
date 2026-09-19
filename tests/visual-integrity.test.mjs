@@ -7,6 +7,7 @@ const traffic = readFileSync(new URL('../lib/traffic-renderer.ts', import.meta.u
 const globe = readFileSync(new URL('../lib/globe.ts', import.meta.url), 'utf8');
 const labels = readFileSync(new URL('../lib/country-label-overlay.ts', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../components/atlas-v2.module.css', import.meta.url), 'utf8');
+const aircraftPreview = readFileSync(new URL('../components/aircraft-live-preview.tsx', import.meta.url), 'utf8');
 
 test('intelligence markers respect globe depth and horizon occlusion', () => {
   assert.doesNotMatch(renderer, /disableDepthTestDistance:\s*Number\.POSITIVE_INFINITY/);
@@ -75,4 +76,21 @@ test('semantic zoom aggregates globally and reveals individual objects closer in
   assert.match(traffic, /atlas-traffic-density/);
   assert.match(traffic, /clusterTraffic/);
   assert.match(traffic, /nextZoom!=='global'/);
+});
+
+
+test('real time day night lighting is enabled at engine startup', () => {
+  assert.match(globe, /enableLighting = true/);
+  assert.match(globe, /dynamicAtmosphereLighting = true/);
+  assert.match(globe, /dynamicAtmosphereLightingFromSun = true/);
+  assert.match(globe, /maximumRenderTimeChange: 60/);
+  assert.match(globe, /setDayNight\(enabled:boolean\)/);
+});
+
+test('aircraft detail uses a dedicated 3D live preview, not a static icon', () => {
+  assert.match(aircraftPreview, /new C\.Viewer/);
+  assert.match(aircraftPreview, /spec\.detail/);
+  assert.match(aircraftPreview, /HeadingPitchRoll/);
+  assert.match(aircraftPreview, /LIVE REPORT/);
+  assert.doesNotMatch(aircraftPreview, /billboard/i);
 });
