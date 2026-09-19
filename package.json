@@ -1,10 +1,10 @@
 {
   "name": "atlas-netic",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "engines": {"node": "22.x"},
   "scripts": {
-    "models": "node scripts/build-traffic-models.mjs",
+    "models": "node scripts/build-traffic-models.mjs && node scripts/build-satellite-models.mjs",
     "dev": "pnpm models && node scripts/prepare-globe.mjs && next dev",
     "build": "pnpm models && node scripts/prepare-globe.mjs && next build --webpack",
     "start": "next start",

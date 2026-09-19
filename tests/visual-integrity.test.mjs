@@ -22,11 +22,21 @@ test('dense intelligence layers use distance scaling and screen-space declutteri
   assert.match(renderer, /maxVisible/);
 });
 
-test('traffic stays 3D but is hidden at non-useful world scale', () => {
+test('traffic stays 3D and visually pronounced without billboard fallbacks', () => {
   assert.match(traffic, /distanceDisplayCondition/);
-  assert.match(traffic, /3_500_000/);
-  assert.match(traffic, /7_000_000/);
+  assert.match(traffic, /6_000_000/);
+  assert.match(traffic, /12_000_000/);
+  assert.match(traffic, /silhouetteSize/);
+  assert.match(traffic, /maximumScale/);
   assert.doesNotMatch(traffic, /billboard/i);
+});
+
+test('live intelligence has semantic identity instead of anonymous moving spheres or dots', () => {
+  assert.match(renderer, /satelliteVisualSpec/);
+  assert.match(renderer, /model:/);
+  assert.match(renderer, /billboard:/);
+  assert.match(renderer, /signalIcon/);
+  assert.doesNotMatch(renderer, /ellipsoid:/);
 });
 
 test('Atlas chrome keeps the globe visually dominant', () => {

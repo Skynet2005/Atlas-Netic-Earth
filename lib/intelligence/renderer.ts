@@ -1,6 +1,7 @@
 import type * as Cesium from 'cesium';
 import type { IntelligenceKind, IntelligenceSignal, SatelliteRecord } from './types';
 import { satelliteOrbitPath } from './sgp4';
+import { satelliteVisualSpec, signalIcon } from './visuals';
 
 type CModule = typeof Cesium;
 const KINDS: IntelligenceKind[] = ['earthquakes', 'fires', 'weather', 'satellites'];
@@ -32,6 +33,7 @@ export class IntelligenceRenderer {
   private readonly removeCameraListener: () => void;
   private selectionToken = 0;
   private visibilityFrame: number | null = null;
+  private satelliteDetail = false;
 
   constructor(private C: CModule, private viewer: Cesium.Viewer, private onSelect: (signal: IntelligenceSignal | null) => void) {
     for (const kind of KINDS) {
@@ -51,7 +53,48 @@ export class IntelligenceRenderer {
       this.onSelect(signal);
       void this.select(signal);
     }, C.ScreenSpaceEventType.LEFT_CLICK);
-    this.removeCameraListener = viewer.camera.changed.addEventListener(() => this.queueVisibilityUpdate());
+    this.removeCameraListener = viewer.camera.changed.addEventListener(() => {
+      this.updateSatelliteDetail();
+      this.queueVisibilityUpdate();
+    });
+    this.updateSatelliteDetail();
+  }
+
+  private satelliteUri(signal: IntelligenceSignal) {
+    const spec = satelliteVisualSpec(signal);
+    return this.satelliteDetail ? spec.detail : spec.low;
+  }
+
+  private updateSatelliteDetail() {
+    const next = this.viewer.camera.positionCartographic.height < 2_000_000;
+    if (next === this.satelliteDetail) return;
+    this.satelliteDetail = next;
+    const source = this.sources.get('satellites');
+    if (!source) return;
+    for (const signal of this.signals.values()) {
+      if (signal.kind !== 'satellites') continue;
+      const entity = source.entities.getById(signal.id);
+      if (entity?.model) entity.model.uri = new this.C.ConstantProperty(this.satelliteUri(signal));
+    }
+    this.viewer.scene.requestRender();
+  }
+
+  private eventBillboard(signal: IntelligenceSignal) {
+    const C = this.C;
+    const important = signal.severity === 'extreme' || signal.severity === 'severe';
+    const size = important ? 36 : signal.kind === 'earthquakes' ? 30 : 32;
+    return {
+      image: signalIcon(signal),
+      width: size,
+      height: size,
+      verticalOrigin: C.VerticalOrigin.CENTER,
+      horizontalOrigin: C.HorizontalOrigin.CENTER,
+      heightReference: C.HeightReference.CLAMP_TO_GROUND,
+      scaleByDistance: new C.NearFarScalar(30_000, 1.18, distanceLimit(signal), 0.7),
+      translucencyByDistance: new C.NearFarScalar(300_000, 1, distanceLimit(signal), 0.34),
+      distanceDisplayCondition: new C.DistanceDisplayCondition(0, distanceLimit(signal)),
+      disableDepthTestDistance: 0,
+    };
   }
 
   sync(signals: IntelligenceSignal[]) {
@@ -59,6 +102,7 @@ export class IntelligenceRenderer {
     const next = new Map(signals.map(signal => [signal.id, signal]));
     this.signals.clear();
     for (const signal of signals) this.signals.set(signal.id, signal);
+
     for (const kind of KINDS) {
       const source = this.sources.get(kind)!;
       const active = new Set(signals.filter(signal => signal.kind === kind).map(signal => signal.id));
@@ -71,52 +115,52 @@ export class IntelligenceRenderer {
           const position = C.Cartesian3.fromDegrees(signal.longitude, signal.latitude, height);
           const color = colorFor(C, signal);
           let entity = source.entities.getById(signal.id);
+
           if (!entity) {
             const common = { id: signal.id, name: signal.name, position, properties: { atlasSignalId: signal.id, atlasKind: signal.kind } };
             if (signal.kind === 'satellites') {
+              const spec = satelliteVisualSpec(signal);
               entity = source.entities.add({
                 ...common,
-                ellipsoid: {
-                  radii: new C.Cartesian3(7000, 7000, 7000),
-                  material: color.withAlpha(0.82),
-                  outline: true,
-                  outlineColor: C.Color.WHITE.withAlpha(0.38),
+                model: {
+                  uri: this.satelliteUri(signal),
+                  minimumPixelSize: spec.minimumPixelSize,
+                  maximumScale: 10_000,
+                  runAnimations: false,
+                  incrementallyLoadTextures: false,
+                  shadows: C.ShadowMode.DISABLED,
+                  enableVerticalExaggeration: false,
                   distanceDisplayCondition: new C.DistanceDisplayCondition(0, 60_000_000),
+                  color: color.withAlpha(0.96),
+                  colorBlendMode: C.ColorBlendMode.MIX,
+                  colorBlendAmount: 0.08,
+                  silhouetteColor: C.Color.WHITE.withAlpha(0.94),
+                  silhouetteSize: spec.className === 'station' ? 2.4 : 1.8,
                 },
                 label: {
                   text: signal.name,
-                  font: '500 11px Inter, sans-serif',
-                  fillColor: C.Color.WHITE.withAlpha(0.92),
+                  font: '600 11px Inter, sans-serif',
+                  fillColor: C.Color.WHITE.withAlpha(0.95),
                   outlineColor: C.Color.fromCssColorString('#061018'),
                   outlineWidth: 3,
                   style: C.LabelStyle.FILL_AND_OUTLINE,
-                  pixelOffset: new C.Cartesian2(0, -15),
-                  scaleByDistance: new C.NearFarScalar(100_000, 0.9, 1_500_000, 0.35),
-                  translucencyByDistance: new C.NearFarScalar(100_000, 1, 1_500_000, 0),
-                  distanceDisplayCondition: new C.DistanceDisplayCondition(0, 1_500_000),
+                  pixelOffset: new C.Cartesian2(0, -24),
+                  scaleByDistance: new C.NearFarScalar(100_000, 1, 2_500_000, 0.42),
+                  translucencyByDistance: new C.NearFarScalar(150_000, 1, 2_500_000, 0),
+                  distanceDisplayCondition: new C.DistanceDisplayCondition(0, 2_500_000),
                   disableDepthTestDistance: 0,
                 },
               });
             } else if (signal.kind === 'fires') {
               entity = source.entities.add({
                 ...common,
-                point: {
-                  pixelSize: 8,
-                  color: color.withAlpha(0.9),
-                  outlineColor: C.Color.WHITE.withAlpha(0.52),
-                  outlineWidth: 1,
-                  heightReference: C.HeightReference.CLAMP_TO_GROUND,
-                  scaleByDistance: new C.NearFarScalar(30_000, 1.15, 6_000_000, 0.55),
-                  translucencyByDistance: new C.NearFarScalar(500_000, 0.95, 9_000_000, 0.25),
-                  distanceDisplayCondition: new C.DistanceDisplayCondition(0, 10_000_000),
-                  disableDepthTestDistance: 0,
-                },
+                billboard: this.eventBillboard(signal),
                 ellipse: {
                   semiMajorAxis: 9_000,
                   semiMinorAxis: 9_000,
                   material: color.withAlpha(0.08),
                   outline: true,
-                  outlineColor: color.withAlpha(0.38),
+                  outlineColor: color.withAlpha(0.42),
                   heightReference: C.HeightReference.CLAMP_TO_GROUND,
                   distanceDisplayCondition: new C.DistanceDisplayCondition(0, 2_000_000),
                 },
@@ -125,57 +169,43 @@ export class IntelligenceRenderer {
               const important = signal.severity === 'extreme' || signal.severity === 'severe';
               entity = source.entities.add({
                 ...common,
-                point: {
-                  pixelSize: important ? 12 : 8,
-                  color: color.withAlpha(0.92),
-                  outlineColor: C.Color.WHITE.withAlpha(important ? 0.9 : 0.55),
-                  outlineWidth: important ? 2 : 1,
-                  heightReference: C.HeightReference.CLAMP_TO_GROUND,
-                  scaleByDistance: new C.NearFarScalar(50_000, 1.15, 5_000_000, 0.55),
-                  translucencyByDistance: new C.NearFarScalar(500_000, 1, 8_000_000, 0.25),
-                  distanceDisplayCondition: new C.DistanceDisplayCondition(0, 8_000_000),
-                  disableDepthTestDistance: 0,
-                },
+                billboard: this.eventBillboard(signal),
                 label: important ? {
                   text: signal.name,
-                  font: '500 11px Inter, sans-serif',
+                  font: '600 11px Inter, sans-serif',
                   fillColor: C.Color.WHITE,
                   outlineColor: C.Color.fromCssColorString('#061018'),
                   outlineWidth: 3,
                   style: C.LabelStyle.FILL_AND_OUTLINE,
-                  pixelOffset: new C.Cartesian2(0, -17),
-                  scaleByDistance: new C.NearFarScalar(25_000, 1, 1_200_000, 0.45),
-                  translucencyByDistance: new C.NearFarScalar(150_000, 1, 1_200_000, 0),
-                  distanceDisplayCondition: new C.DistanceDisplayCondition(0, 1_200_000),
+                  pixelOffset: new C.Cartesian2(0, -24),
+                  scaleByDistance: new C.NearFarScalar(25_000, 1, 1_400_000, 0.45),
+                  translucencyByDistance: new C.NearFarScalar(150_000, 1, 1_400_000, 0),
+                  distanceDisplayCondition: new C.DistanceDisplayCondition(0, 1_400_000),
                   disableDepthTestDistance: 0,
                 } : undefined,
               });
             } else {
-              const magnitude = Number(signal.details.magnitude || 0);
-              entity = source.entities.add({
-                ...common,
-                point: {
-                  pixelSize: Math.max(6, Math.min(16, 4 + magnitude * 1.65)),
-                  color: color.withAlpha(0.92),
-                  outlineColor: C.Color.fromCssColorString('#07121a').withAlpha(0.88),
-                  outlineWidth: 1.5,
-                  heightReference: C.HeightReference.CLAMP_TO_GROUND,
-                  scaleByDistance: new C.NearFarScalar(50_000, 1.15, 18_000_000, 0.55),
-                  translucencyByDistance: new C.NearFarScalar(1_000_000, 1, 26_000_000, 0.38),
-                  distanceDisplayCondition: new C.DistanceDisplayCondition(0, 28_000_000),
-                  disableDepthTestDistance: 0,
-                },
-              });
+              entity = source.entities.add({ ...common, billboard: this.eventBillboard(signal) });
             }
           } else {
             entity.name = signal.name;
             entity.position = new C.ConstantPositionProperty(position);
+            if (signal.kind === 'satellites' && entity.model) {
+              const spec = satelliteVisualSpec(signal);
+              entity.model.uri = new C.ConstantProperty(this.satelliteUri(signal));
+              entity.model.minimumPixelSize = new C.ConstantProperty(spec.minimumPixelSize);
+              entity.model.silhouetteSize = new C.ConstantProperty(spec.className === 'station' ? 2.4 : 1.8);
+            } else if (entity.billboard) {
+              entity.billboard.image = new C.ConstantProperty(signalIcon(signal));
+            }
           }
         }
       } finally { source.entities.resumeEvents(); }
     }
+
     const current = [...this.selection.entities.values].find(entity => typeof entity.properties?.atlasSignalId?.getValue?.() === 'string');
     if (current && !next.has(String(current.properties?.atlasSignalId?.getValue?.()))) this.clearSelection();
+    this.updateSatelliteDetail();
     this.queueVisibilityUpdate();
     this.viewer.scene.requestRender();
   }
@@ -216,7 +246,7 @@ export class IntelligenceRenderer {
         continue;
       }
       const screen = C.SceneTransforms.worldToWindowCoordinates(viewer.scene, position);
-      if (!screen || screen.x < -30 || screen.x > width + 30 || screen.y < -30 || screen.y > height + 30) {
+      if (!screen || screen.x < -40 || screen.x > width + 40 || screen.y < -40 || screen.y > height + 40) {
         entity.show = false;
         continue;
       }
@@ -228,7 +258,7 @@ export class IntelligenceRenderer {
     let shown = 0;
     for (const item of candidates) {
       const important = item.signal.severity === 'extreme' || item.signal.severity === 'severe';
-      const cell = item.signal.kind === 'satellites' ? baseCell + 10 : baseCell;
+      const cell = item.signal.kind === 'satellites' ? baseCell + 12 : baseCell;
       const namespace = item.signal.kind === 'satellites' ? 'orbit' : 'ground';
       const key = `${namespace}:${Math.floor(item.x / cell)}:${Math.floor(item.y / cell)}`;
       const show = shown < maxVisible && (important || !occupied.has(key));
@@ -253,33 +283,44 @@ export class IntelligenceRenderer {
       position: C.Cartesian3.fromDegrees(signal.longitude, signal.latitude, height),
       properties: { atlasSignalId: signal.id },
       point: {
-        pixelSize: 21,
+        pixelSize: signal.kind === 'satellites' ? 42 : 38,
         color: C.Color.TRANSPARENT,
         outlineColor: color.withAlpha(0.98),
-        outlineWidth: 3,
+        outlineWidth: 2,
         disableDepthTestDistance: 0,
         heightReference: signal.kind === 'satellites' ? C.HeightReference.NONE : C.HeightReference.CLAMP_TO_GROUND,
       },
     });
+
     if (signal.kind === 'satellites') {
       const line1 = String(signal.details.tleLine1 || ''), line2 = String(signal.details.tleLine2 || '');
       if (line1 && line2) {
         const record: SatelliteRecord = { id: String(signal.details.noradId || signal.id), name: signal.name, line1, line2, group: String(signal.details.group || ''), source: signal.source, sourceUrl: signal.sourceUrl || '' };
         const points = await satelliteOrbitPath(record, new Date(signal.observedAt));
         if (token !== this.selectionToken) return;
-        if (points.length > 1) this.selection.entities.add({ id: `orbit:${signal.id}`, polyline: { positions: points.map(point => C.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude)), width: 2, material: color.withAlpha(0.58), arcType: C.ArcType.NONE } });
+        if (points.length > 1) this.selection.entities.add({
+          id: `orbit:${signal.id}`,
+          polyline: {
+            positions: points.map(point => C.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude)),
+            width: 2,
+            material: color.withAlpha(0.62),
+            arcType: C.ArcType.NONE,
+          },
+        });
       }
     }
     this.viewer.scene.requestRender();
   }
 
   clearSelection() { this.onSelect(null); void this.select(null); }
+
   destroy() {
     this.removeCameraListener();
     if (this.visibilityFrame !== null) cancelAnimationFrame(this.visibilityFrame);
     this.handler.destroy();
     for (const source of this.sources.values()) this.viewer.dataSources.remove(source, true);
     this.viewer.dataSources.remove(this.selection, true);
-    this.sources.clear(); this.signals.clear();
+    this.sources.clear();
+    this.signals.clear();
   }
 }

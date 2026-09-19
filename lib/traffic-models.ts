@@ -27,5 +27,8 @@ const labels:Record<TrafficModelClass,string>={
 };
 export function trafficModelSpec(target:TrafficTarget):TrafficModelSpec{
  const className=trafficModelClass(target),base=`/models/${className}`;
- return{className,low:`${base}-low.gltf`,detail:`${base}-detail.gltf`,label:labels[className],minimumPixelSize:target.kind==='maritime'?20:18};
+ const minimumPixelSize=target.kind==='maritime'
+  ? target.vesselClass==='passenger'||target.vesselClass==='cargo'||target.vesselClass==='tanker'||target.vesselClass==='military'?32:28
+  : className==='air-heavy'?34:className==='air-helicopter'||className==='air-fighter'?31:29;
+ return{className,low:`${base}-low.gltf`,detail:`${base}-detail.gltf`,label:labels[className],minimumPixelSize};
 }

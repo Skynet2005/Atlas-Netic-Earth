@@ -330,10 +330,11 @@ export class Globe {
           // Cesium culls offscreen models without destroying them as the camera moves.
           entity = entities.add({id:target.id,name:target.name,position,orientation,
             model:{uri:target.kind==='maritime'?'/models/vessel.gltf':'/models/aircraft.gltf',
-              minimumPixelSize:22,runAnimations:false,incrementallyLoadTextures:false,
+              minimumPixelSize:target.kind==='maritime'?28:29,maximumScale:4800,runAnimations:false,incrementallyLoadTextures:false,
               shadows:C.ShadowMode.DISABLED,enableVerticalExaggeration:false,
               heightReference:reference,color:C.Color.fromCssColorString(target.heading===null||target.altitude===null?'#b9bec6':target.kind==='military'?'#ffbd75':target.kind==='maritime'?'#8ecbff':'#a4ecdb'),
-              colorBlendMode:C.ColorBlendMode.MIX,colorBlendAmount:0.35}});
+              colorBlendMode:C.ColorBlendMode.MIX,colorBlendAmount:0.14,
+              silhouetteColor:C.Color.WHITE.withAlpha(0.88),silhouetteSize:1.55}});
         } else {
           entity.name=target.name;
           entity.position=new C.ConstantPositionProperty(position);

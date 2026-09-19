@@ -66,7 +66,11 @@ Scene links serialize camera pose, imagery/terrain state, display toggles, traff
 
 ## Rendering policy
 
-Public traffic continues to use persistent 3D meshes; camera movement does not destroy and recreate models. Intelligence layers use stable entity IDs so updates mutate existing entities. Satellite altitude is not vertically exaggerated. Ground events clamp to the surface. Selected orbital paths use propagated 3D positions rather than decorative arcs.
+Public traffic continues to use persistent 3D meshes; camera movement does not destroy and recreate models. Aircraft and vessels resolve to conservative shape families from reported type metadata, keep a minimum screen-space footprint, and use outlines for contrast against bright terrain.
+
+Satellite contacts use generated low/detail 3D spacecraft families selected from catalog names/groups. These are category representations only: Atlas does not claim a source-reported spacecraft bus, scale, or attitude when the feed does not provide one. Ground intelligence is represented by semantic event glyphs (earthquake, fire, weather) rather than anonymous point markers. Selection rings are secondary emphasis and never replace the underlying contact representation.
+
+Intelligence layers use stable entity IDs so updates mutate existing entities. Satellite altitude is not vertically exaggerated. Ground events clamp to the surface. Selected orbital paths use propagated 3D positions rather than decorative arcs.
 
 ## Security boundary
 
