@@ -42,6 +42,8 @@ const forbidden = [
   'components/earth-explorer.tsx',
   'components/ui',
   'vendor/shadcn-tailwind-4.13.0.css',
+  'db',
+  'drizzle.config.ts',
 ];
 
 console.log('Atlas-Netic dependency audit');
