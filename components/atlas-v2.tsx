@@ -24,13 +24,10 @@ type PanelTab = 'map' | 'traffic' | 'intel';
 
 function useDiagnostics(objects: number, enabled: boolean) {
   const objectsRef = useRef(objects);
-  objectsRef.current = objects;
   const [value, setValue] = useState({ fps: 0, objects, heapMb: null as number | null });
+  useEffect(() => { objectsRef.current = objects; }, [objects]);
   useEffect(() => {
-    if (!enabled) {
-      setValue(current => current.objects === objectsRef.current ? current : { ...current, objects: objectsRef.current });
-      return;
-    }
+    if (!enabled) return;
     let frames = 0, last = performance.now(), raf = 0, active = true;
     const frame = (now: number) => {
       frames++;
