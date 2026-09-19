@@ -1,3 +1,7 @@
+# Atlas explicitly approves only the native helpers it needs. Unknown dependency
+# build scripts remain blocked, but a platform-specific optional package must not
+# make a clean Vercel install fail merely because its script was skipped.
+strictDepBuilds: false
 allowBuilds:
   esbuild: true
   sharp: true
