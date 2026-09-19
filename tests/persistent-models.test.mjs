@@ -18,7 +18,7 @@ test('all traffic gets models beyond old distance and count limits; updates pres
  const targets=Array.from({length:120},(_,i)=>report(String(i),{longitude:i-60,...(i===0?{altitude:null,heading:null}:{}),...(i===1?{kind:'maritime',altitude:0,altitudeReference:'surface'}:{})}));
  globe.setTraffic(targets);assert.equal(globe.traffic.entities.values.length,120);
  const before=globe.traffic.entities.values.map(e=>e.model);
- for(const e of globe.traffic.entities.values){assert.ok(e.model);assert.equal(e.billboard,undefined);assert.equal(e.model.minimumPixelSize.getValue(),22);assert.equal(e.model.maximumScale,undefined);}
+ for(const e of globe.traffic.entities.values){assert.ok(e.model);assert.equal(e.billboard,undefined);const minimum=e.model.minimumPixelSize.getValue();assert.ok(minimum>=28);assert.equal(e.model.maximumScale.getValue(),4800);assert.ok(e.model.silhouetteSize.getValue()>=1.55);}
  globe.setTraffic(targets.map(t=>({...t,longitude:t.longitude+1,observedAt:now+1000})));
  globe.traffic.entities.values.forEach((e,i)=>assert.equal(e.model,before[i]));
  assert.match(globe.traffic.entities.getById('1').model.uri.getValue(),/vessel.gltf/);
