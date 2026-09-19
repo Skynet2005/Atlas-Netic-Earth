@@ -4,7 +4,8 @@ import {resolve} from 'node:path';
 const budgets=[
  ['components/atlas-v2.tsx',42_000],
  ['components/atlas-v2.module.css',24_000],
- ['lib/intelligence/renderer.ts',22_000],
+ ['lib/intelligence/renderer.ts',28_000],
+ ['lib/intelligence/visuals.ts',12_000],
  ['lib/country-label-overlay.ts',12_000],
  ['hooks/use-intelligence.ts',18_000],
  ['hooks/use-traffic.ts',12_000],
