@@ -6,7 +6,7 @@ import { Globe, loadCesium, type Surface, type TerrainPoint, type ViewInfo } fro
 import { useTraffic } from '@/hooks/use-traffic';
 import type { TrafficLayers, TrafficTarget } from '@/lib/traffic';
 import { TrafficPanel } from '@/components/traffic-panel';
-import { Switch } from '@/components/ui/switch';
+import { Switch } from '@/components/switch';
 import { AltitudeUnits } from '@/components/altitude-units';
 import { useAltitude } from '@/hooks/use-altitude';
 import { formatAltitude } from '@/lib/altitude';
@@ -16,6 +16,7 @@ import { IntelligenceRenderer } from '@/lib/intelligence/renderer';
 import { TrafficRenderer } from '@/lib/traffic-renderer';
 import { trafficModelSpec } from '@/lib/traffic-models';
 import { signalVisualLabel } from '@/lib/intelligence/visuals';
+import { semanticZoomForAltitude, semanticZoomLabel } from '@/lib/semantic-zoom';
 import { IntelligencePanel } from '@/components/intelligence-panel';
 import { encodeScene, readSceneHash } from '@/lib/intelligence/scene';
 import styles from './atlas-v2.module.css';
@@ -47,6 +48,7 @@ function useDiagnostics(objects: number, enabled: boolean) {
 
 export default function AtlasV2() {
   const { unit } = useAltitude();
+  const browserTestShell = process.env.NODE_ENV !== 'production' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('__atlas_e2e') === '1';
   const canvasRef = useRef<HTMLDivElement>(null), creditRef = useRef<HTMLDivElement>(null), globeRef = useRef<Globe | null>(null), intelligenceRenderer = useRef<IntelligenceRenderer | null>(null), trafficRenderer = useRef<TrafficRenderer | null>(null);
   const [ready, setReady] = useState(false), [fatal, setFatal] = useState(''), [retry, setRetry] = useState(0), [terrainReady, setTerrainReady] = useState(false), [loading, setLoading] = useState(true);
   const [view, setView] = useState<ViewInfo>({ latitude: 24, longitude: -90, altitude: 18_000_000, heading: 0, pitch: -90, range: 18_000_000 });
@@ -66,6 +68,7 @@ export default function AtlasV2() {
   const setReplay=useCallback((minutes:number)=>{setReplayMinutes(minutes);setReplayAt(minutes>0?Date.now()-minutes*60_000:null);},[]);
 
   useEffect(() => {
+    if (browserTestShell) return;
     let cancelled = false, engine: Globe | undefined, renderer: IntelligenceRenderer | undefined, classifiedTraffic: TrafficRenderer | undefined;
     void (async () => {
       try {
@@ -83,7 +86,7 @@ export default function AtlasV2() {
       } catch (error) { if (!cancelled) setFatal(error instanceof Error ? error.message : 'Your browser could not start Atlas-Netic.'); }
     })();
     return () => { cancelled = true; setReady(false); intelligenceRenderer.current = null; trafficRenderer.current = null; classifiedTraffic?.destroy(); renderer?.destroy(); globeRef.current = null; engine?.destroy(); };
-  }, [retry, notice]);
+  }, [retry, notice, browserTestShell]);
 
   useEffect(() => { if (ready) void globeRef.current?.setSurface(surface); }, [ready, surface]);
   useEffect(() => { if (ready) globeRef.current?.setTerrain(terrain); }, [ready, terrain]);
@@ -135,6 +138,7 @@ export default function AtlasV2() {
 
   const feedMap: Record<IntelligenceKind, typeof intelligence.earthquakes> = { earthquakes: intelligence.earthquakes, fires: intelligence.fires, weather: intelligence.weather, satellites: intelligence.satellites };
   const trafficHealth = { air: { phase: trafficFeeds.air.phase, message: trafficFeeds.air.message, updatedAt: trafficFeeds.air.updatedAt, count: trafficFeeds.air.targets.length, cache: trafficFeeds.air.cache }, maritime: { phase: trafficFeeds.maritime.phase, message: trafficFeeds.maritime.message, updatedAt: trafficFeeds.maritime.updatedAt, count: trafficFeeds.maritime.targets.length, cache: trafficFeeds.maritime.cache } };
+  const semanticZoom = semanticZoomForAltitude(view.altitude);
   const status = fatal ? 'Globe unavailable' : !ready ? 'Starting globe…' : !terrain ? 'Terrain off' : !terrainReady ? 'Loading elevation…' : loading ? 'Refining map detail…' : replayMinutes ? `Replay · ${replayMinutes}m ago` : 'Live Earth';
 
   if (fatal) return <main className={styles.error}><div><Globe2 size={38}/><h1>Atlas-Netic could not start</h1><p>{fatal}</p><button onClick={() => { setFatal(''); setRetry(value => value + 1); }}>Recover with lighter graphics</button></div></main>;
@@ -151,7 +155,7 @@ export default function AtlasV2() {
       {panelTab === 'traffic' && <div className={styles.trafficWrap}><TrafficPanel layers={trafficLayers} onChange={setTrafficLayers} feeds={trafficFeeds} onBaltic={() => globeRef.current?.overview(24.8, 59.7, 1_100_000)}/></div>}
       {panelTab === 'intel' && <IntelligencePanel layers={intelLayers} onChange={setIntelLayers} feeds={feedMap} satelliteGroup={satelliteGroup} onSatelliteGroup={setSatelliteGroup} replayMinutes={replayMinutes} onReplay={setReplay} diagnostics={diagnostics} trafficHealth={trafficHealth}/>} 
     </div></aside>}
-    <div className={styles.status}><span className={replayMinutes ? undefined : styles.liveDot}/><span>{status}</span><span>·</span><span>{view.latitude.toFixed(2)}°, {view.longitude.toFixed(2)}°</span><span>·</span><span>{formatAltitude(view.altitude, unit)}</span>{Object.values(notices).length>0 && <><span>·</span><span>{Object.values(notices)[0]}</span></>}</div>
+    <div className={styles.status}><span className={replayMinutes ? undefined : styles.liveDot}/><span>{status}</span><span>·</span><span>{semanticZoomLabel(semanticZoom)}</span><span>·</span><span>{view.latitude.toFixed(2)}°, {view.longitude.toFixed(2)}°</span><span>·</span><span>{formatAltitude(view.altitude, unit)}</span>{Object.values(notices).length>0 && <><span>·</span><span>{Object.values(notices)[0]}</span></>}</div>
     {selectedSignal && <aside className={styles.selectionCard}><header><div><h3>{selectedSignal.name}</h3><p>{signalVisualLabel(selectedSignal)} · {selectedSignal.source} · {selectedSignal.quality}</p></div><button aria-label="Close intelligence detail" onClick={() => { setSelectedSignal(null); intelligenceRenderer.current?.clearSelection(); }}><X size={18}/></button></header><dl className={styles.selectionGrid}><div><dt>Position</dt><dd>{selectedSignal.latitude.toFixed(4)}, {selectedSignal.longitude.toFixed(4)}</dd></div><div><dt>Altitude</dt><dd>{selectedSignal.altitude === null ? 'Not reported' : formatAltitude(selectedSignal.altitude, unit)}</dd></div><div><dt>Observed</dt><dd>{new Date(selectedSignal.observedAt).toLocaleString()}</dd></div><div><dt>Severity</dt><dd>{selectedSignal.severity}</dd></div>{Object.entries(selectedSignal.details).filter(([,value]) => value !== null && value !== '' && !String(value).startsWith('1 ') && !String(value).startsWith('2 ')).slice(0,8).map(([key,value]) => <div key={key}><dt>{key}</dt><dd>{String(value)}</dd></div>)}</dl>{selectedSignal.sourceUrl && <a className={styles.sourceLink} href={selectedSignal.sourceUrl} target="_blank" rel="noreferrer">Open source record ↗</a>}</aside>}
     {!selectedSignal && selectedTraffic && <aside className={styles.selectionCard}><header><div><h3>{selectedTraffic.name}</h3><p>{trafficModelSpec(selectedTraffic).label} · {selectedTraffic.source}</p></div><button aria-label="Close traffic detail" onClick={() => { setSelectedTraffic(null); globeRef.current?.clearTrafficSelection(); }}><X size={18}/></button></header><dl className={styles.selectionGrid}><div><dt>Position</dt><dd>{selectedTraffic.latitude.toFixed(4)}, {selectedTraffic.longitude.toFixed(4)}</dd></div><div><dt>Altitude</dt><dd>{selectedTraffic.altitude === null ? 'Unknown' : formatAltitude(selectedTraffic.altitude, unit)}</dd></div><div><dt>Speed</dt><dd>{selectedTraffic.speed === null ? 'Unknown' : `${selectedTraffic.speed.toFixed(0)} kt`}</dd></div><div><dt>Heading</dt><dd>{selectedTraffic.heading === null ? 'Unknown' : `${selectedTraffic.heading.toFixed(0)}°`}</dd></div>{selectedTraffic.aircraftType&&<div><dt>Aircraft type</dt><dd>{selectedTraffic.aircraftType}</dd></div>}{selectedTraffic.registration&&<div><dt>Registration</dt><dd>{selectedTraffic.registration}</dd></div>}{selectedTraffic.callSign&&<div><dt>Call sign</dt><dd>{selectedTraffic.callSign}</dd></div>}{selectedTraffic.imo&&<div><dt>IMO</dt><dd>{selectedTraffic.imo}</dd></div>}{selectedTraffic.lengthMeters&&<div><dt>Dimensions</dt><dd>{selectedTraffic.lengthMeters} m × {selectedTraffic.beamMeters??'?'} m</dd></div>}{selectedTraffic.destination&&<div><dt>Destination</dt><dd>{selectedTraffic.destination}</dd></div>}<div><dt>Stored observations</dt><dd>{trafficFeeds.historyFor(selectedTraffic.id).length}</dd></div></dl></aside>}
     {shareMessage && <div className={styles.shareMessage}>{shareMessage}</div>}

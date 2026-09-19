@@ -66,3 +66,13 @@ test('intelligence visibility work is frame-coalesced and viewport-scaled', () =
   assert.match(renderer, /areaScale/);
   assert.match(renderer, /namespace = item\.signal\.kind === 'satellites'/);
 });
+
+
+test('semantic zoom aggregates globally and reveals individual objects closer in', () => {
+  assert.match(renderer, /atlas-intelligence-density/);
+  assert.match(renderer, /clusterIntelligence/);
+  assert.match(renderer, /semanticZoomForAltitude/);
+  assert.match(traffic, /atlas-traffic-density/);
+  assert.match(traffic, /clusterTraffic/);
+  assert.match(traffic, /nextZoom!=='global'/);
+});

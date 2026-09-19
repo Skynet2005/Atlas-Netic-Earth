@@ -70,8 +70,19 @@ Public traffic continues to use persistent 3D meshes; camera movement does not d
 
 Satellite contacts use generated low/detail 3D spacecraft families selected from catalog names/groups. These are category representations only: Atlas does not claim a source-reported spacecraft bus, scale, or attitude when the feed does not provide one. Ground intelligence is represented by semantic event glyphs (earthquake, fire, weather) rather than anonymous point markers. Selection rings are secondary emphasis and never replace the underlying contact representation.
 
+Atlas uses semantic zoom rather than exposing progressively more raw markers. GLOBAL view replaces individual traffic and intelligence contacts with geographic density clusters/heat zones. REGIONAL view restores decluttered semantic contacts and low-detail 3D traffic. LOCAL view exposes the individual objects and detailed 3D models. The shared policy lives in `lib/semantic-zoom.ts` so traffic and intelligence transition at the same camera scales.
+
 Intelligence layers use stable entity IDs so updates mutate existing entities. Satellite altitude is not vertically exaggerated. Ground events clamp to the surface. Selected orbital paths use propagated 3D positions rather than decorative arcs.
 
 ## Security boundary
 
 Provider secrets are environment variables read only by server routes. The browser receives normalized records, provider/source metadata and public source links, never API keys.
+
+
+## Front-end dependency policy
+
+The active application intentionally avoids the old template UI bundle. Atlas keeps a small custom component surface and direct CSS modules/global styles. `scripts/dependency-audit.mjs` fails CI when unused direct runtime dependencies or removed legacy/template paths return.
+
+## Browser regression policy
+
+`tests/e2e` runs Atlas in Chromium at desktop, tablet, and iPhone-sized viewports. The suite captures screenshots, verifies the clean closed-menu startup state, checks overflow and basic interaction, and confirms canonical/social/structured SEO metadata. Browser artifacts are retained by the dedicated GitHub Actions workflow.
