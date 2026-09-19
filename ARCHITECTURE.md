@@ -86,3 +86,22 @@ The active application intentionally avoids the old template UI bundle. Atlas ke
 ## Browser regression policy
 
 `tests/e2e` runs Atlas in Chromium at desktop, tablet, and iPhone-sized viewports. The suite captures screenshots, verifies the clean closed-menu startup state, checks overflow and basic interaction, and confirms canonical/social/structured SEO metadata. Browser artifacts are retained by the dedicated GitHub Actions workflow.
+
+## Mobility Center
+
+Mobility is intentionally separate from the manual 100-tool workspace so provider-computed routes never overwrite user waypoints.
+
+```text
+MobilityDrawer
+  ├─ POST /api/mobility/directions -> HeiGIT openrouteservice
+  ├─ GET  /api/mobility/airways    -> FAA NASR AWY + FIX + NAV
+  ├─ GET  /api/mobility/notams     -> authorized FAA NMS adapter
+  └─ GET  /api/mobility/rail       -> Amtrak static GTFS
+
+provider -> server validation/cache -> normalized mobility contract -> dedicated Cesium mobility data source
+```
+
+The server owns all provider credentials. The client receives normalized coordinates, steps, source labels and timestamps only. The dedicated Cesium data source means a road route, airway, or rail shape can be cleared without destroying saved workspace points or traffic/intelligence state.
+
+FAA NASR and Amtrak archives are read with the small built-in ZIP reader in `lib/mobility/zip.ts`; no archive or routing SDK is added to the production dependency surface. Provider archives and parsed data are bounded and cached in-process. NOTAM data is never inferred from the static airway network.
+

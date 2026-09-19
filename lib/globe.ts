@@ -4,6 +4,7 @@ import { CountryLabelOverlay, type CountryLabelRecord } from './country-label-ov
 import type { TrafficTarget } from './traffic';
 import { readCamera, writeCamera, type CameraSnapshot } from './session';
 import {destination,distanceKm,bearing,type GeoPoint} from './geo';
+import type { MobilityPathKind } from './mobility/types';
 
 type CModule = typeof Cesium;
 declare global { interface Window { Cesium?: CModule; CESIUM_BASE_URL?: string } }
@@ -62,6 +63,7 @@ export class Globe {
   private countryLabels: CountryLabelOverlay;
   private traffic: Cesium.CustomDataSource;
   private workspace: Cesium.CustomDataSource;
+  private mobility: Cesium.CustomDataSource;
   private trafficTargets = new Map<string, TrafficTarget>();
   private selectedTrafficId?: string;
   private graphicsQuality: 'eco'|'balanced'|'detail' = 'balanced';
@@ -144,6 +146,7 @@ export class Globe {
     this.traffic = new C.CustomDataSource('transponder-traffic');
     void v.dataSources.add(this.traffic);
     this.workspace = new C.CustomDataSource('workspace-tools');void v.dataSources.add(this.workspace);
+    this.mobility = new C.CustomDataSource('mobility-center');void v.dataSources.add(this.mobility);
     const resize = new ResizeObserver(() => {
       if (this.disposed) return;
       v.resolutionScale = Math.min(window.devicePixelRatio || 1, this.graphicsQuality === 'eco' ? 1 : this.graphicsQuality === 'detail' ? 1.75 : 1.25) / (window.devicePixelRatio || 1);
@@ -200,6 +203,17 @@ export class Globe {
       for(let lon=-180;lon<180;lon+=10){const coords:number[]=[];for(let lat=-90;lat<=90;lat+=2)coords.push(lon,lat,100);ds.entities.add({polyline:{positions:C.Cartesian3.fromDegreesArrayHeights(coords),width:1,material:C.Color.WHITE.withAlpha(0.25)}});}
     }this.render();
   }
+  showMobilityPath(points:GeoPoint[],kind:MobilityPathKind){
+    const C=this.C,ds=this.mobility;ds.entities.removeAll();
+    if(points.length<2){this.render();return;}
+    const color=C.Color.fromCssColorString(kind==='ground'?'#5ee8c8':kind==='air'?'#ffbd75':'#d991ff');
+    const positions=points.map(point=>C.Cartesian3.fromDegrees(point.longitude,point.latitude));
+    ds.entities.add({id:'mobility-path',polyline:{positions,clampToGround:true,width:kind==='ground'?5:4,material:kind==='air'?new C.PolylineDashMaterialProperty({color,dashLength:18}):color,arcType:C.ArcType.GEODESIC}});
+    const endpoints:[GeoPoint,string][]=[[points[0],'START'],[points.at(-1)!,'END']];
+    endpoints.forEach(([point,label],index)=>ds.entities.add({id:`mobility-${index}`,position:C.Cartesian3.fromDegrees(point.longitude,point.latitude),point:{pixelSize:9,color,outlineColor:C.Color.WHITE,outlineWidth:1.5,heightReference:C.HeightReference.CLAMP_TO_GROUND},label:{text:point.name||label,font:'11px sans-serif',pixelOffset:new C.Cartesian2(0,-18),fillColor:C.Color.WHITE,outlineColor:C.Color.BLACK,outlineWidth:2,style:C.LabelStyle.FILL_AND_OUTLINE,heightReference:C.HeightReference.CLAMP_TO_GROUND}}));
+    this.render();
+  }
+  clearMobilityPath(){this.mobility.entities.removeAll();this.render();}
   fitPoints(points:GeoPoint[]){if(!points.length)return;const C=this.C;this.viewer.camera.flyToBoundingSphere(C.BoundingSphere.fromPoints(points.map(p=>C.Cartesian3.fromDegrees(p.longitude,p.latitude))),{duration:this.duration(1),offset:new C.HeadingPitchRange(0,-C.Math.PI_OVER_TWO,0)});}
   async profile(points:GeoPoint[]){
     if(points.length<2)throw new Error('Add at least two waypoints.');
