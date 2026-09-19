@@ -6,6 +6,8 @@ const budgets=[
  ['components/atlas-v2.module.css',24_000],
  ['app/globals.css',12_000],
  ['components/switch.tsx',3_000],
+ ['components/aircraft-live-preview.tsx',12_000],
+ ['components/aircraft-live-preview.module.css',8_000],
  ['lib/semantic-zoom.ts',8_000],
  ['lib/intelligence/renderer.ts',28_000],
  ['lib/intelligence/visuals.ts',12_000],

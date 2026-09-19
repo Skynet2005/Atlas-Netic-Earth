@@ -10,6 +10,7 @@ export type AtlasScene = {
   borders: boolean;
   labels: boolean;
   exaggeration: number;
+  dayNight?: boolean;
   traffic: TrafficLayers;
   intelligence: IntelligenceLayers;
   satelliteGroup: string;
