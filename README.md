@@ -12,6 +12,7 @@ Atlas-Netic is a real-time 3D Earth intelligence workspace built with Next.js, T
 - NOAA/NWS active weather alerts for the map center.
 - CelesTrak orbital elements propagated in-browser with SGP4/SDP4 for stations, GPS, weather, science, GEO and Starlink catalogs.
 - Selected satellite orbit paths.
+- Semantic zoom: global density clusters, regional intelligence, and local individual 3D contacts.
 - Source-health states, stale-data preservation, request coalescing, retries and server-side stale caches.
 - A 24-hour event/orbit replay control. Traffic history is retained from observations collected during the active browser session.
 - Exact scene sharing: camera, map state, traffic layers, intelligence layers, catalog and replay position are encoded into a link.
@@ -38,7 +39,13 @@ Full verification:
 pnpm verify
 ```
 
-That runs lint, unit/contract tests, static performance budgets and the production build.
+That runs lint, unit/contract tests, the direct-dependency audit, static performance budgets and the production build.
+
+Browser regression tests are maintained separately with Playwright at desktop, tablet, and iPhone viewports. CI installs the test runner ephemerally so it does not expand the production dependency graph.
+
+```sh
+pnpm e2e
+```
 
 ## Optional environment variables
 
