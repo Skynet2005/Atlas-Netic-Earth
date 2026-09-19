@@ -2,6 +2,7 @@ import type * as Cesium from 'cesium';
 import type { IntelligenceKind, IntelligenceSignal, SatelliteRecord } from './types';
 import { satelliteOrbitPath } from './sgp4';
 import { satelliteVisualSpec, signalIcon } from './visuals';
+import { clusterIntelligence, intelligenceClusterSummary, semanticZoomForAltitude, type SemanticZoomLevel } from '../semantic-zoom';
 
 type CModule = typeof Cesium;
 const KINDS: IntelligenceKind[] = ['earthquakes', 'fires', 'weather', 'satellites'];
@@ -28,12 +29,14 @@ function distanceLimit(signal: IntelligenceSignal) {
 export class IntelligenceRenderer {
   private readonly sources = new Map<IntelligenceKind, Cesium.CustomDataSource>();
   private readonly selection: Cesium.CustomDataSource;
+  private readonly clusters: Cesium.CustomDataSource;
   private readonly signals = new Map<string, IntelligenceSignal>();
   private readonly handler: Cesium.ScreenSpaceEventHandler;
   private readonly removeCameraListener: () => void;
   private selectionToken = 0;
   private visibilityFrame: number | null = null;
   private satelliteDetail = false;
+  private zoom: SemanticZoomLevel = 'global';
 
   constructor(private C: CModule, private viewer: Cesium.Viewer, private onSelect: (signal: IntelligenceSignal | null) => void) {
     for (const kind of KINDS) {
@@ -43,6 +46,8 @@ export class IntelligenceRenderer {
     }
     this.selection = new C.CustomDataSource('atlas-intelligence-selection');
     void viewer.dataSources.add(this.selection);
+    this.clusters = new C.CustomDataSource('atlas-intelligence-density');
+    void viewer.dataSources.add(this.clusters);
     this.handler = new C.ScreenSpaceEventHandler(viewer.scene.canvas);
     this.handler.setInputAction((event: { position: Cesium.Cartesian2 }) => {
       const picked = viewer.scene.pick(event.position) as { id?: Cesium.Entity } | undefined;
@@ -65,8 +70,48 @@ export class IntelligenceRenderer {
     return this.satelliteDetail ? spec.detail : spec.low;
   }
 
+  private clusterColor(cluster: ReturnType<typeof clusterIntelligence>[number]) {
+    const C = this.C;
+    if (cluster.severity === 'extreme') return C.Color.fromCssColorString('#ff554d');
+    if (cluster.severity === 'severe') return C.Color.fromCssColorString('#ff9a55');
+    const dominant = Object.entries(cluster.counts).sort((a,b)=>b[1]-a[1])[0]?.[0];
+    return C.Color.fromCssColorString(dominant === 'fires' ? '#ff8a52' : dominant === 'weather' ? '#dca0ff' : dominant === 'satellites' ? '#8bd3ff' : '#ffd166');
+  }
+
+  private renderClusters() {
+    const C = this.C, entities = this.clusters.entities;
+    entities.removeAll();
+    for (const cluster of clusterIntelligence([...this.signals.values()], 12).slice(0, 180)) {
+      const color = this.clusterColor(cluster);
+      const radius = Math.max(95_000, Math.min(420_000, 80_000 + Math.sqrt(cluster.count) * 46_000));
+      entities.add({
+        id: cluster.id,
+        position: C.Cartesian3.fromDegrees(cluster.longitude, cluster.latitude),
+        ellipse: {
+          semiMajorAxis: radius,
+          semiMinorAxis: radius,
+          material: color.withAlpha(Math.min(0.28, 0.08 + cluster.count * 0.012)),
+          outline: true,
+          outlineColor: color.withAlpha(0.76),
+          heightReference: C.HeightReference.CLAMP_TO_GROUND,
+        },
+        label: {
+          text: `${cluster.count}\n${intelligenceClusterSummary(cluster)}`,
+          font: '600 11px Inter, sans-serif',
+          fillColor: C.Color.WHITE.withAlpha(0.97),
+          outlineColor: C.Color.fromCssColorString('#031018'),
+          outlineWidth: 3,
+          style: C.LabelStyle.FILL_AND_OUTLINE,
+          heightReference: C.HeightReference.CLAMP_TO_GROUND,
+          disableDepthTestDistance: 0,
+          distanceDisplayCondition: new C.DistanceDisplayCondition(0, 32_000_000),
+        },
+      });
+    }
+  }
+
   private updateSatelliteDetail() {
-    const next = this.viewer.camera.positionCartographic.height < 2_000_000;
+    const next = semanticZoomForAltitude(this.viewer.camera.positionCartographic.height) === 'local';
     if (next === this.satelliteDetail) return;
     this.satelliteDetail = next;
     const source = this.sources.get('satellites');
@@ -206,6 +251,7 @@ export class IntelligenceRenderer {
     const current = [...this.selection.entities.values].find(entity => typeof entity.properties?.atlasSignalId?.getValue?.() === 'string');
     if (current && !next.has(String(current.properties?.atlasSignalId?.getValue?.()))) this.clearSelection();
     this.updateSatelliteDetail();
+    if (this.zoom === 'global') this.renderClusters();
     this.queueVisibilityUpdate();
     this.viewer.scene.requestRender();
   }
@@ -223,9 +269,20 @@ export class IntelligenceRenderer {
     if (!viewer.scene || viewer.scene.isDestroyed()) return;
     const width = Math.max(1, viewer.canvas.clientWidth), height = Math.max(1, viewer.canvas.clientHeight);
     const cameraHeight = viewer.camera.positionCartographic.height;
-    const baseCell = cameraHeight > 8_000_000 ? 54 : cameraHeight > 2_000_000 ? 42 : cameraHeight > 500_000 ? 30 : 20;
+    const nextZoom = semanticZoomForAltitude(cameraHeight);
+    if (nextZoom !== this.zoom) {
+      this.zoom = nextZoom;
+      for (const source of this.sources.values()) source.show = nextZoom !== 'global';
+      this.clusters.show = nextZoom === 'global';
+      if (nextZoom === 'global') this.renderClusters();
+    }
+    if (nextZoom === 'global') {
+      viewer.scene.requestRender();
+      return;
+    }
+    const baseCell = nextZoom === 'regional' ? 34 : 20;
     const areaScale = Math.min(1.35, Math.max(0.55, (width * height) / (1440 * 900)));
-    const baseMaximum = cameraHeight > 8_000_000 ? 260 : cameraHeight > 2_000_000 ? 520 : 1_100;
+    const baseMaximum = nextZoom === 'regional' ? 620 : 1_500;
     const maxVisible = Math.round(baseMaximum * areaScale);
     const ellipsoid = viewer.scene.globe.ellipsoid;
     const scaledCamera = ellipsoid.transformPositionToScaledSpace(viewer.camera.positionWC, new C.Cartesian3());
@@ -258,7 +315,7 @@ export class IntelligenceRenderer {
     let shown = 0;
     for (const item of candidates) {
       const important = item.signal.severity === 'extreme' || item.signal.severity === 'severe';
-      const cell = item.signal.kind === 'satellites' ? baseCell + 12 : baseCell;
+      const cell = item.signal.kind === 'satellites' ? baseCell + (nextZoom === 'regional' ? 14 : 8) : baseCell;
       const namespace = item.signal.kind === 'satellites' ? 'orbit' : 'ground';
       const key = `${namespace}:${Math.floor(item.x / cell)}:${Math.floor(item.y / cell)}`;
       const show = shown < maxVisible && (important || !occupied.has(key));
@@ -320,6 +377,7 @@ export class IntelligenceRenderer {
     this.handler.destroy();
     for (const source of this.sources.values()) this.viewer.dataSources.remove(source, true);
     this.viewer.dataSources.remove(this.selection, true);
+    this.viewer.dataSources.remove(this.clusters, true);
     this.sources.clear();
     this.signals.clear();
   }
