@@ -1,6 +1,6 @@
 "use client";
 import { Activity, Flame, Satellite, CloudLightning, RefreshCw, Clock3, Plane, Ship } from 'lucide-react';
-import { Switch } from '@/components/ui/switch';
+import { Switch } from '@/components/switch';
 import type { IntelligenceFeed } from '@/hooks/use-intelligence';
 import type { IntelligenceLayers, IntelligenceKind } from '@/lib/intelligence/types';
 import styles from './atlas-v2.module.css';
