@@ -52,7 +52,7 @@ export function IntelligencePanel({ layers, onChange, feeds, satelliteGroup, onS
       </section>;
     })}
     <section className={styles.diagnostics}><div className={styles.rowBetween}><span>Transponder source health</span><strong>PUBLIC FEEDS</strong></div>{([{key:'air',title:'Air / military',Icon:Plane},{key:'maritime',title:'Maritime',Icon:Ship}] as const).map(({key,title,Icon})=>{const feed=trafficHealth[key];return <div key={key}><span><Icon size={13}/> {title}: {feed.phase} · {feed.count.toLocaleString()} · {age(feed.updatedAt)}</span><span>{feed.cache?`cache ${feed.cache}`:feed.message}</span></div>;})}</section>
-    <section className={styles.diagnostics}><div className={styles.rowBetween}><span>Runtime diagnostics</span><strong>{diagnostics.fps} FPS</strong></div><div><span>{diagnostics.objects.toLocaleString()} rendered live/intelligence objects</span><span>{diagnostics.heapMb === null ? 'Heap unavailable' : `${diagnostics.heapMb.toFixed(0)} MB JS heap`}</span></div></section>
+    <section className={styles.diagnostics}><div className={styles.rowBetween}><span>Runtime diagnostics</span><strong>{diagnostics.fps} FPS</strong></div><div><span>{diagnostics.objects.toLocaleString()} loaded live/intelligence objects</span><span>{diagnostics.heapMb === null ? 'Heap unavailable' : `${diagnostics.heapMb.toFixed(0)} MB JS heap`}</span></div></section>
     <p className={styles.disclaimer}>Atlas preserves provider timestamps and unknown values. A blank layer means “nothing received,” not “nothing exists.” Satellite positions are derived from current CelesTrak elements with SGP4/SDP4.</p>
   </div>;
 }
