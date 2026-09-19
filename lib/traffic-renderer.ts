@@ -29,31 +29,32 @@ export class TrafficRenderer{
  private renderClusters(){
   const C=this.C,entities=this.clusters.entities;
   entities.removeAll();
-  const summaries=clusterTraffic([...this.targets.values()],12).slice(0,140);
-  for(const cluster of summaries){
+  const summaries=clusterTraffic([...this.targets.values()],18).slice(0,72);
+  for(const [index,cluster] of summaries.entries()){
    const dominant=cluster.military>=cluster.air&&cluster.military>=cluster.maritime?'military':cluster.maritime>cluster.air?'maritime':'air';
    const color=C.Color.fromCssColorString(dominant==='military'?'#ffbd75':dominant==='maritime'?'#8ecbff':'#a4ecdb');
    const radius=Math.max(85_000,Math.min(360_000,70_000+Math.sqrt(cluster.count)*42_000));
+   const showLabel=index<20&&cluster.count>=3;
    entities.add({
     id:cluster.id,
     position:C.Cartesian3.fromDegrees(cluster.longitude,cluster.latitude),
     ellipse:{
      semiMajorAxis:radius,semiMinorAxis:radius,
-     material:color.withAlpha(Math.min(.24,.075+cluster.count*.012)),
-     outline:true,outlineColor:color.withAlpha(.72),
+     material:color.withAlpha(Math.min(.22,.065+Math.sqrt(cluster.count)*.018)),
+     outline:true,outlineColor:color.withAlpha(.66),
      heightReference:C.HeightReference.CLAMP_TO_GROUND,
     },
-    label:{
-     text:`${cluster.count}\n${trafficClusterSummary(cluster)}`,
-     font:'600 11px Inter, sans-serif',
-     fillColor:C.Color.WHITE.withAlpha(.96),
+    label:showLabel?{
+     text:trafficClusterSummary(cluster),
+     font:'600 10px Inter, sans-serif',
+     fillColor:C.Color.WHITE.withAlpha(.94),
      outlineColor:C.Color.fromCssColorString('#031018'),
      outlineWidth:3,style:C.LabelStyle.FILL_AND_OUTLINE,
-     pixelOffset:new C.Cartesian2(0,-4),
+     pixelOffset:new C.Cartesian2(0,-8),
      heightReference:C.HeightReference.CLAMP_TO_GROUND,
      disableDepthTestDistance:0,
      distanceDisplayCondition:new C.DistanceDisplayCondition(0,30_000_000),
-    },
+    }:undefined,
    });
   }
  }
