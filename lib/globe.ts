@@ -1,6 +1,6 @@
 import type * as Cesium from 'cesium';
 import { approachCoordinates, planTerrainApproach, TERRAIN_VIEW_ANGLE } from './terrain-view';
-import { showCountryLabels } from './country-labels';
+import { CountryLabelOverlay, type CountryLabelRecord } from './country-label-overlay';
 import type { TrafficTarget } from './traffic';
 import { readCamera, writeCamera, type CameraSnapshot } from './session';
 import {destination,distanceKm,bearing,type GeoPoint} from './geo';
@@ -59,8 +59,7 @@ export class Globe {
   private relief?: Cesium.ImageryLayer;
   private reliefLoading?: Promise<Cesium.ImageryLayer | undefined>;
   private borders?: Cesium.GeoJsonDataSource;
-  private labels: Cesium.LabelCollection;
-  private countryAnchors: { label: Cesium.Label; position: Cesium.Cartesian3; maximumDistance: number }[] = [];
+  private countryLabels: CountryLabelOverlay;
   private traffic: Cesium.CustomDataSource;
   private workspace: Cesium.CustomDataSource;
   private trafficTargets = new Map<string, TrafficTarget>();
@@ -127,8 +126,8 @@ export class Globe {
     const saved = readCamera();
     if (saved) this.restoreCamera(saved);
     v.camera.percentageChanged = 0.005;
-    this.cleanups.push(v.camera.changed.addEventListener(() => this.reportView()));
-    this.cleanups.push(v.camera.moveEnd.addEventListener(() => this.reportView(true)));
+    this.cleanups.push(v.camera.changed.addEventListener(() => { this.reportView(); this.countryLabels.requestUpdate(); }));
+    this.cleanups.push(v.camera.moveEnd.addEventListener(() => { this.reportView(true); this.countryLabels.requestUpdate(); }));
     this.cleanups.push(v.scene.globe.tileLoadProgressEvent.addEventListener((count: number) => {
       if (this.disposed) return;
       const loading = count > 0;
@@ -139,15 +138,14 @@ export class Globe {
       callbacks.onNotice('render', 'Rendering paused. Recover view keeps your location and uses lighter graphics.');
       console.error('Globe render error', error);
     }));
-    this.labels = v.scene.primitives.add(new C.LabelCollection({ scene: v.scene }));
+    this.countryLabels = new CountryLabelOverlay(C, v, element);
     this.traffic = new C.CustomDataSource('transponder-traffic');
     void v.dataSources.add(this.traffic);
     this.workspace = new C.CustomDataSource('workspace-tools');void v.dataSources.add(this.workspace);
-    this.cleanups.push(v.scene.preRender.addEventListener(() => this.updateCountryLabels()));
     const resize = new ResizeObserver(() => {
       if (this.disposed) return;
       v.resolutionScale = Math.min(window.devicePixelRatio || 1, this.graphicsQuality === 'eco' ? 1 : this.graphicsQuality === 'detail' ? 1.75 : 1.25) / (window.devicePixelRatio || 1);
-      v.resize(); this.render();
+      v.resize(); this.countryLabels.requestUpdate(); this.render();
     });
     resize.observe(element);
     this.cleanups.push(() => resize.disconnect());
@@ -303,49 +301,15 @@ export class Globe {
       (async () => {
         try {
           const response = await fetch('/data/countries.json'); if (!response.ok) throw new Error('Labels unavailable');
-          const countries = await response.json() as {name:string;lat:number;lng:number;size:number}[];
+          const countries = await response.json() as CountryLabelRecord[];
           if (this.disposed) return;
-          for (const country of countries.sort((a,b) => a.size-b.size)) {
-            if (!Number.isFinite(country.lat) || !Number.isFinite(country.lng)) continue;
-            // Fixed geodetic anchors avoid asynchronous terrain-clamp positions lingering after zooms.
-            // Explicit horizon and viewport culling below permits overlay text without showing far-side labels.
-            const position = C.Cartesian3.fromDegrees(country.lng,country.lat);
-            const label = this.labels.add({position,
-              text:country.name, font:'500 13px Arial', fillColor:C.Color.fromCssColorString('#eef4f8').withAlpha(0.87),
-              outlineColor:C.Color.fromCssColorString('#0a1724'), outlineWidth:3, style:C.LabelStyle.FILL_AND_OUTLINE,
-              heightReference:C.HeightReference.NONE, disableDepthTestDistance:Number.POSITIVE_INFINITY,
-              scaleByDistance:new C.NearFarScalar(100000,0.9,30000000,0.8),
-            });
-            this.countryAnchors.push({label,position,maximumDistance:country.size<=2?32000000:country.size<=4?11500000:4500000});
-          }
-          this.updateCountryLabels(); this.render();
+          this.countryLabels.load(countries);
+          this.countryLabels.setEnabled(this.labelsVisible);
+          this.render();
         } catch { if (!this.disposed) this.callbacks.onNotice('labels', 'Country names could not load.'); }
       })(),
     ]);
   }
-  private updateCountryLabels() {
-    if (this.disposed) return;
-    const C = this.C, v = this.viewer, camera = v.camera, width = v.canvas.clientWidth, height = v.canvas.clientHeight;
-    this.labels.show = showCountryLabels(this.labelsVisible, camera.positionCartographic.height, width, C.Math.toDegrees(camera.pitch));
-    if (!this.labels.show) return;
-    const ellipsoid = v.scene.globe.ellipsoid;
-    const scaledCamera = ellipsoid.transformPositionToScaledSpace(camera.positionWC, new C.Cartesian3());
-    const occupied: { x: number; y: number; halfWidth: number }[] = [];
-    const direction = new C.Cartesian3();
-    for (const { label, position, maximumDistance } of this.countryAnchors) {
-      // On a unit sphere a surface anchor is beyond the horizon when camera · anchor <= 1.
-      const scaledAnchor = ellipsoid.transformPositionToScaledSpace(position, new C.Cartesian3());
-      if (C.Cartesian3.dot(scaledCamera, scaledAnchor) <= 1.002 || C.Cartesian3.distance(camera.positionWC, position) > maximumDistance) { label.show = false; continue; }
-      if (C.Cartesian3.dot(C.Cartesian3.subtract(position, camera.positionWC, direction), camera.directionWC) <= 0) { label.show = false; continue; }
-      const screen = C.SceneTransforms.worldToWindowCoordinates(v.scene, position);
-      const halfWidth = Math.max(24, label.text.length * 3.4);
-      if (!screen || screen.x < halfWidth || screen.x > width-halfWidth || screen.y < 20 || screen.y > height-20) { label.show = false; continue; }
-      if (occupied.some(other => Math.abs(screen.x-other.x) < halfWidth+other.halfWidth+10 && Math.abs(screen.y-other.y) < 26)) { label.show = false; continue; }
-      label.show = true;
-      occupied.push({ x: screen.x, y: screen.y, halfWidth });
-    }
-  }
-
   setTraffic(targets: TrafficTarget[]) {
     if (this.disposed) return;
     const C = this.C, entities = this.traffic.entities;
@@ -489,7 +453,7 @@ export class Globe {
     this.viewer.scene.verticalExaggeration=enabled?this.desiredExaggeration:1; this.updateTerrainAppearance(); this.render();
   }
   setBorders(enabled:boolean) { this.bordersVisible=enabled; if(this.borders) this.borders.show=enabled; this.render(); }
-  setLabels(enabled:boolean) { this.labelsVisible=enabled; this.updateCountryLabels(); this.render(); }
+  setLabels(enabled:boolean) { this.labelsVisible=enabled; this.countryLabels.setEnabled(enabled); this.render(); }
   setExaggeration(value:number) { this.desiredExaggeration=value; this.viewer.scene.verticalExaggeration=this.desiredTerrain?value:1; this.render(); }
   async setAngle(angle:number) {
     const C=this.C, camera=this.viewer.camera, center=this.center();
@@ -589,7 +553,7 @@ export class Globe {
     if(this.pin) this.viewer.entities.remove(this.pin);
     this.pin=this.viewer.entities.add({position:C.Cartesian3.fromDegrees(lng,lat),point:{
       pixelSize:10,color:C.Color.fromCssColorString('#a4ecdb'),outlineColor:C.Color.WHITE,outlineWidth:2,
-      heightReference:C.HeightReference.CLAMP_TO_GROUND,disableDepthTestDistance:Number.POSITIVE_INFINITY,
+      heightReference:C.HeightReference.CLAMP_TO_GROUND,disableDepthTestDistance:0,
     }}); this.render();
     if(!this.terrain||!covered) return;
     try {
@@ -599,5 +563,5 @@ export class Globe {
     } catch { if(!this.disposed && id===this.sampleId) this.callbacks.onPoint({latitude:lat,longitude:lng,height:null,pending:false}); }
   }
   clearPoint() { this.selectedPoint=undefined; ++this.sampleId; if(this.pin) {this.viewer.entities.remove(this.pin);this.pin=undefined;} this.callbacks.onPoint(null);this.render(); }
-  destroy() { this.saveCamera(); ++this.navigationId; this.disposed=true;++this.sampleId;this.cleanups.forEach(fn=>fn());this.handler.destroy();if(!this.viewer.isDestroyed()) this.viewer.destroy(); }
+  destroy() { this.saveCamera(); ++this.navigationId; this.disposed=true;++this.sampleId;this.cleanups.forEach(fn=>fn());this.handler.destroy();this.countryLabels.destroy();if(!this.viewer.isDestroyed()) this.viewer.destroy(); }
 }

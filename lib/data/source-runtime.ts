@@ -20,6 +20,17 @@ type SourceOptions<T> = {
 
 const cache = new Map<string, CacheEntry<unknown>>();
 const inflight = new Map<string, Promise<SourceResult<unknown>>>();
+const MAX_CACHE_ENTRIES = 128;
+
+function rememberCacheEntry<T>(key: string, entry: CacheEntry<T>) {
+  cache.delete(key);
+  cache.set(key, entry as CacheEntry<unknown>);
+  while (cache.size > MAX_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    cache.delete(oldest);
+  }
+}
 
 export class ProviderError extends Error {
   readonly status: number;
@@ -82,7 +93,7 @@ export async function cachedSource<T>({ key, ttlMs, staleMs, loader }: SourceOpt
     try {
       const data = await loader();
       const entry: CacheEntry<T> = { data, fetchedAt: Date.now(), latencyMs: Date.now() - started };
-      cache.set(key, entry);
+      rememberCacheEntry(key, entry);
       return { ...entry, state: 'live', cache: 'miss' };
     } catch (error) {
       const stale = cache.get(key) as CacheEntry<T> | undefined;

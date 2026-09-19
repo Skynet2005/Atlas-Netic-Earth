@@ -31,6 +31,7 @@ export class IntelligenceRenderer {
   private readonly handler: Cesium.ScreenSpaceEventHandler;
   private readonly removeCameraListener: () => void;
   private selectionToken = 0;
+  private visibilityFrame: number | null = null;
 
   constructor(private C: CModule, private viewer: Cesium.Viewer, private onSelect: (signal: IntelligenceSignal | null) => void) {
     for (const kind of KINDS) {
@@ -50,7 +51,7 @@ export class IntelligenceRenderer {
       this.onSelect(signal);
       void this.select(signal);
     }, C.ScreenSpaceEventType.LEFT_CLICK);
-    this.removeCameraListener = viewer.camera.changed.addEventListener(() => this.updateVisibility());
+    this.removeCameraListener = viewer.camera.changed.addEventListener(() => this.queueVisibilityUpdate());
   }
 
   sync(signals: IntelligenceSignal[]) {
@@ -175,8 +176,16 @@ export class IntelligenceRenderer {
     }
     const current = [...this.selection.entities.values].find(entity => typeof entity.properties?.atlasSignalId?.getValue?.() === 'string');
     if (current && !next.has(String(current.properties?.atlasSignalId?.getValue?.()))) this.clearSelection();
-    this.updateVisibility();
+    this.queueVisibilityUpdate();
     this.viewer.scene.requestRender();
+  }
+
+  private queueVisibilityUpdate() {
+    if (this.visibilityFrame !== null) return;
+    this.visibilityFrame = requestAnimationFrame(() => {
+      this.visibilityFrame = null;
+      this.updateVisibility();
+    });
   }
 
   private updateVisibility() {
@@ -184,8 +193,10 @@ export class IntelligenceRenderer {
     if (!viewer.scene || viewer.scene.isDestroyed()) return;
     const width = Math.max(1, viewer.canvas.clientWidth), height = Math.max(1, viewer.canvas.clientHeight);
     const cameraHeight = viewer.camera.positionCartographic.height;
-    const baseCell = cameraHeight > 8_000_000 ? 44 : cameraHeight > 2_000_000 ? 34 : cameraHeight > 500_000 ? 26 : 18;
-    const maxVisible = cameraHeight > 8_000_000 ? 420 : cameraHeight > 2_000_000 ? 760 : 1_500;
+    const baseCell = cameraHeight > 8_000_000 ? 54 : cameraHeight > 2_000_000 ? 42 : cameraHeight > 500_000 ? 30 : 20;
+    const areaScale = Math.min(1.35, Math.max(0.55, (width * height) / (1440 * 900)));
+    const baseMaximum = cameraHeight > 8_000_000 ? 260 : cameraHeight > 2_000_000 ? 520 : 1_100;
+    const maxVisible = Math.round(baseMaximum * areaScale);
     const ellipsoid = viewer.scene.globe.ellipsoid;
     const scaledCamera = ellipsoid.transformPositionToScaledSpace(viewer.camera.positionWC, new C.Cartesian3());
     const now = viewer.clock.currentTime;
@@ -218,7 +229,8 @@ export class IntelligenceRenderer {
     for (const item of candidates) {
       const important = item.signal.severity === 'extreme' || item.signal.severity === 'severe';
       const cell = item.signal.kind === 'satellites' ? baseCell + 10 : baseCell;
-      const key = `${item.signal.kind}:${Math.floor(item.x / cell)}:${Math.floor(item.y / cell)}`;
+      const namespace = item.signal.kind === 'satellites' ? 'orbit' : 'ground';
+      const key = `${namespace}:${Math.floor(item.x / cell)}:${Math.floor(item.y / cell)}`;
       const show = shown < maxVisible && (important || !occupied.has(key));
       item.entity.show = show;
       if (show) {
@@ -264,6 +276,7 @@ export class IntelligenceRenderer {
   clearSelection() { this.onSelect(null); void this.select(null); }
   destroy() {
     this.removeCameraListener();
+    if (this.visibilityFrame !== null) cancelAnimationFrame(this.visibilityFrame);
     this.handler.destroy();
     for (const source of this.sources.values()) this.viewer.dataSources.remove(source, true);
     this.viewer.dataSources.remove(this.selection, true);
