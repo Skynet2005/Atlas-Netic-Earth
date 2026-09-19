@@ -36,7 +36,7 @@ export class IntelligenceRenderer {
   private selectionToken = 0;
   private visibilityFrame: number | null = null;
   private satelliteDetail = false;
-  private zoom: SemanticZoomLevel = 'global';
+  private zoom: SemanticZoomLevel = 'local';
 
   constructor(private C: CModule, private viewer: Cesium.Viewer, private onSelect: (signal: IntelligenceSignal | null) => void) {
     for (const kind of KINDS) {
@@ -63,6 +63,7 @@ export class IntelligenceRenderer {
       this.queueVisibilityUpdate();
     });
     this.updateSatelliteDetail();
+    this.updateVisibility();
   }
 
   private satelliteUri(signal: IntelligenceSignal) {
