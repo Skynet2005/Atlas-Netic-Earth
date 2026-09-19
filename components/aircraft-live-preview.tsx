@@ -113,7 +113,6 @@ export function AircraftLivePreview({ target }: { target: TrafficTarget }) {
     })();
     return () => {
       cancelled = true;
-      setReady(false);
       entityRef.current = null;
       cesiumRef.current = null;
       viewerRef.current = null;
