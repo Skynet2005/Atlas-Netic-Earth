@@ -50,17 +50,17 @@ export const metadata: Metadata = {
     title,
     description,
     images: [{
-      url: "/opengraph-image",
+      url: "/atlas-netic-social-preview-v2.jpg",
       width: 1200,
       height: 630,
-      alt: "Atlas-Netic live 3D Earth intelligence globe",
+      alt: "Atlas-Netic live 3D Earth intelligence globe with aircraft, ships, satellites, weather and routes",
     }],
   },
   twitter: {
     card: "summary_large_image",
     title,
     description,
-    images: ["/opengraph-image"],
+    images: ["/atlas-netic-social-preview-v2.jpg"],
   },
   robots: {
     index: true,
